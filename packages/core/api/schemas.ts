@@ -4,10 +4,15 @@ import type {
   AgentTemplate,
   AgentTemplateSummary,
   Attachment,
+  ChatMessage,
+  ChatPendingTask,
+  ChatSession,
   CreateAgentFromTemplateResponse,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
+  PendingChatTasksResponse,
+  SendChatMessageResponse,
   TimelineEntry,
   User,
   WebhookDelivery,
@@ -522,4 +527,96 @@ export const EMPTY_USER: User = {
   profile_description: "",
   created_at: "",
   updated_at: "",
+};
+
+// ---------------------------------------------------------------------------
+// Chat schemas
+// ---------------------------------------------------------------------------
+
+export const ChatSessionSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  agent_id: z.string(),
+  creator_id: z.string(),
+  title: z.string().default(""),
+  status: z.string().default("active"),
+  has_unread: z.boolean().default(false),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  // New IM fields — optional for backward compat
+  kind: z.string().optional(),
+  last_message_preview: z.string().nullable().optional(),
+  last_message_at: z.string().nullable().optional(),
+  is_pinned: z.boolean().optional(),
+  orchestrator_agent_id: z.string().nullable().optional(),
+  title_source: z.string().optional(),
+}).loose();
+
+export const EMPTY_CHAT_SESSION: ChatSession = {
+  id: "",
+  workspace_id: "",
+  agent_id: "",
+  creator_id: "",
+  title: "",
+  status: "active",
+  has_unread: false,
+  created_at: "",
+  updated_at: "",
+};
+
+export const ChatMessageSchema = z.object({
+  id: z.string(),
+  chat_session_id: z.string(),
+  role: z.string().default("user"),
+  content: z.string().default(""),
+  task_id: z.string().nullable().default(null),
+  created_at: z.string().default(""),
+  failure_reason: z.string().nullable().default(null),
+  elapsed_ms: z.number().nullable().default(null),
+  attachments: z.array(z.unknown()).default([]),
+  // New fields
+  agent_id: z.string().nullable().optional(),
+  message_type: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
+export const EMPTY_CHAT_MESSAGE: ChatMessage = {
+  id: "",
+  chat_session_id: "",
+  role: "user",
+  content: "",
+  task_id: null,
+  created_at: "",
+};
+
+export const ChatPendingTaskSchema = z.object({
+  task_id: z.string().optional(),
+  status: z.string().optional(),
+  created_at: z.string().optional(),
+}).loose();
+
+export const EMPTY_CHAT_PENDING_TASK: ChatPendingTask = {};
+
+export const PendingChatTaskItemSchema = z.object({
+  task_id: z.string(),
+  status: z.string(),
+  chat_session_id: z.string(),
+}).loose();
+
+export const PendingChatTasksResponseSchema = z.object({
+  tasks: z.array(PendingChatTaskItemSchema).default([]),
+}).loose();
+
+export const EMPTY_PENDING_CHAT_TASKS: PendingChatTasksResponse = { tasks: [] };
+
+export const SendChatMessageResponseSchema = z.object({
+  message_id: z.string(),
+  task_id: z.string(),
+  created_at: z.string(),
+}).loose();
+
+export const EMPTY_SEND_CHAT_MESSAGE_RESPONSE: SendChatMessageResponse = {
+  message_id: "",
+  task_id: "",
+  created_at: "",
 };
