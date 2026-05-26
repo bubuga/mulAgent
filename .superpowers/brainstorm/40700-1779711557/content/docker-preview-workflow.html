@@ -1,0 +1,26 @@
+<h2>Docker 部署下的预览方式</h2>
+<p class="subtitle">我可以在不破坏当前 Docker 自托管环境的前提下展示改动。</p>
+
+<div class="options">
+  <div class="option" data-choice="dev-frontend" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>推荐：前端开发服务 + Docker 后端</h3>
+      <p>保留 Docker 里的 backend 和 PostgreSQL，临时把 Next.js 前端跑在另一个端口，例如 3001/3002。UI 改动可以快速热更新，适合做聊天主界面的迭代确认。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="compose-rebuild" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>完整镜像重建</h3>
+      <p>每次改动后重新执行 docker compose build/up。最接近你的最终部署形态，但反馈慢，适合方案确认后做最终验收。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="static-wireframe" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>先做交互草图</h3>
+      <p>先在浏览器 companion 里展示“微信/飞书式聊天主界面”的布局草图，不接真实数据。确认信息架构后再进入代码实现。</p>
+    </div>
+  </div>
+</div>
