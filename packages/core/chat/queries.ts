@@ -12,6 +12,8 @@ export const chatKeys = {
   all: (wsId: string) => ["chat", wsId] as const,
   /** Full sessions list (active + archived); the dropdown splits locally. */
   sessions: (wsId: string) => [...chatKeys.all(wsId), "sessions"] as const,
+  /** IM view sessions list with last message preview. */
+  imSessions: (wsId: string) => [...chatKeys.all(wsId), "im-sessions"] as const,
   session: (wsId: string, id: string) => [...chatKeys.all(wsId), "session", id] as const,
   messages: (sessionId: string) => ["chat", "messages", sessionId] as const,
   pendingTask: (sessionId: string) => ["chat", "pending-task", sessionId] as const,
@@ -32,6 +34,14 @@ export function chatSessionsOptions(wsId: string) {
     queryKey: chatKeys.sessions(wsId),
     queryFn: () => api.listChatSessions({ status: "all" }),
     staleTime: Infinity,
+  });
+}
+
+export function chatIMSessionsOptions(wsId: string) {
+  return queryOptions({
+    queryKey: chatKeys.imSessions(wsId),
+    queryFn: () => api.listChatSessions({ view: "im" }),
+    enabled: !!wsId,
   });
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ChatSessionList } from "./chat-session-list";
 import { ChatMainArea } from "./chat-main-area";
 import { ChatNavigationDrawer } from "./chat-navigation-drawer";
@@ -7,6 +8,8 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Plus } from "lucide-react";
 
 export function ChatShell() {
+  const [activeSessionId, setActiveSessionId] = useState<string>();
+
   return (
     <div className="flex h-full">
       <div className="flex w-80 flex-col border-r">
@@ -17,9 +20,12 @@ export function ChatShell() {
             <Plus className="size-4" />
           </Button>
         </div>
-        <ChatSessionList />
+        <ChatSessionList
+          activeSessionId={activeSessionId}
+          onSelectSession={setActiveSessionId}
+        />
       </div>
-      <ChatMainArea />
+      <ChatMainArea sessionId={activeSessionId} />
     </div>
   );
 }

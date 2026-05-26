@@ -9,6 +9,9 @@ export interface ChatSession {
   has_unread: boolean;
   created_at: string;
   updated_at: string;
+  // IM view fields — populated when view=im.
+  last_message_preview?: string | null;
+  last_message_at?: string | null;
 }
 
 export interface PendingChatTaskItem {
