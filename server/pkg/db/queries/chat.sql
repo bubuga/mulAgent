@@ -227,3 +227,10 @@ ORDER BY
 -- name: UpdateChatSessionStatus :exec
 UPDATE chat_session SET status = $2, updated_at = now()
 WHERE id = $1;
+
+-- name: ListChatSessionParticipantsBySessionIDs :many
+SELECT csa.chat_session_id, csa.agent_id, csa.role, a.name AS agent_name, a.avatar_url
+FROM chat_session_agents csa
+JOIN agent a ON a.id = csa.agent_id
+WHERE csa.chat_session_id = ANY($1::uuid[])
+  AND csa.removed_at IS NULL;

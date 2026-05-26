@@ -130,13 +130,40 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
 			return
 		}
+
+		// Batch-load participants for all sessions.
+		sessionIDs := make([]pgtype.UUID, 0, len(rows))
+		for _, s := range rows {
+			sessionIDs = append(sessionIDs, s.ID)
+		}
+		participantRows, _ := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), sessionIDs)
+		participantsBySession := make(map[string][]ParticipantResponse)
+		for _, p := range participantRows {
+			sid := uuidToString(p.ChatSessionID)
+			pr := ParticipantResponse{
+				AgentID: uuidToString(p.AgentID),
+				Role:    p.Role,
+				Name:    p.AgentName,
+			}
+			if p.AvatarUrl.Valid {
+				pr.AvatarURL = &p.AvatarUrl.String
+			}
+			participantsBySession[sid] = append(participantsBySession[sid], pr)
+		}
+
 		resp = make([]ChatSessionResponse, 0, len(rows))
 		for _, s := range rows {
 			if _, ok := allowed[uuidToString(s.AgentID)]; !ok {
 				continue
 			}
+			sid := uuidToString(s.ID)
+			parts := participantsBySession[sid]
+			kind := "direct"
+			if len(parts) > 1 {
+				kind = "group"
+			}
 			item := ChatSessionResponse{
-				ID:          uuidToString(s.ID),
+				ID:          sid,
 				WorkspaceID: uuidToString(s.WorkspaceID),
 				AgentID:     uuidToString(s.AgentID),
 				CreatorID:   uuidToString(s.CreatorID),
@@ -145,6 +172,8 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				HasUnread:   s.HasUnread,
 				CreatedAt:   timestampToString(s.CreatedAt),
 				UpdatedAt:   timestampToString(s.UpdatedAt),
+				Kind:        kind,
+				Participants: parts,
 			}
 			if s.LastMessagePreview.Valid {
 				item.LastMessagePreview = &s.LastMessagePreview.String
@@ -158,7 +187,15 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				ql := strings.ToLower(q)
 				titleMatch := strings.Contains(strings.ToLower(s.Title), ql)
 				contentMatch := s.LastMessagePreview.Valid && strings.Contains(strings.ToLower(s.LastMessagePreview.String), ql)
-				if !titleMatch && !contentMatch {
+				// Also search participant names.
+				nameMatch := false
+				for _, p := range parts {
+					if strings.Contains(strings.ToLower(p.Name), ql) {
+						nameMatch = true
+						break
+					}
+				}
+				if !titleMatch && !contentMatch && !nameMatch {
 					continue
 				}
 			}
@@ -800,8 +837,17 @@ type ChatSessionResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	// IM view fields — populated when view=im.
-	LastMessagePreview *string `json:"last_message_preview,omitempty"`
-	LastMessageAt      *string `json:"last_message_at,omitempty"`
+	Kind               string              `json:"kind,omitempty"`
+	Participants       []ParticipantResponse `json:"participants,omitempty"`
+	LastMessagePreview *string             `json:"last_message_preview,omitempty"`
+	LastMessageAt      *string             `json:"last_message_at,omitempty"`
+}
+
+type ParticipantResponse struct {
+	AgentID   string  `json:"agent_id"`
+	Role      string  `json:"role"`
+	Name      string  `json:"name,omitempty"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
 type ChatMessageResponse struct {

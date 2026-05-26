@@ -533,6 +533,13 @@ export const EMPTY_USER: User = {
 // Chat schemas
 // ---------------------------------------------------------------------------
 
+export const ChatParticipantSchema = z.object({
+  agent_id: z.string(),
+  role: z.string().default("participant"),
+  name: z.string().optional(),
+  avatar_url: z.string().nullable().optional(),
+}).loose();
+
 export const ChatSessionSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
@@ -545,6 +552,7 @@ export const ChatSessionSchema = z.object({
   updated_at: z.string().default(""),
   // New IM fields — optional for backward compat
   kind: z.string().optional(),
+  participants: z.array(ChatParticipantSchema).optional(),
   last_message_preview: z.string().nullable().optional(),
   last_message_at: z.string().nullable().optional(),
   is_pinned: z.boolean().optional(),

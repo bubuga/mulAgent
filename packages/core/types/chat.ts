@@ -1,3 +1,10 @@
+export interface ChatParticipant {
+  agent_id: string;
+  role: string;
+  name?: string;
+  avatar_url?: string | null;
+}
+
 export interface ChatSession {
   id: string;
   workspace_id: string;
@@ -10,6 +17,8 @@ export interface ChatSession {
   created_at: string;
   updated_at: string;
   // IM view fields — populated when view=im.
+  kind?: string;
+  participants?: ChatParticipant[];
   last_message_preview?: string | null;
   last_message_at?: string | null;
 }

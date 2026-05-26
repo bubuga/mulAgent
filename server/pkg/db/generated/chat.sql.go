@@ -905,3 +905,45 @@ func (q *Queries) UpdateChatSessionStatus(ctx context.Context, arg UpdateChatSes
 	_, err := q.db.Exec(ctx, updateChatSessionStatus, arg.ID, arg.Status)
 	return err
 }
+
+const listChatSessionParticipantsBySessionIDs = `-- name: ListChatSessionParticipantsBySessionIDs :many
+SELECT csa.chat_session_id, csa.agent_id, csa.role, a.name AS agent_name, a.avatar_url
+FROM chat_session_agents csa
+JOIN agent a ON a.id = csa.agent_id
+WHERE csa.chat_session_id = ANY($1::uuid[])
+  AND csa.removed_at IS NULL
+`
+
+type ListChatSessionParticipantsBySessionIDsRow struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	Role          string      `json:"role"`
+	AgentName     string      `json:"agent_name"`
+	AvatarUrl     pgtype.Text `json:"avatar_url"`
+}
+
+func (q *Queries) ListChatSessionParticipantsBySessionIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListChatSessionParticipantsBySessionIDsRow, error) {
+	rows, err := q.db.Query(ctx, listChatSessionParticipantsBySessionIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatSessionParticipantsBySessionIDsRow{}
+	for rows.Next() {
+		var i ListChatSessionParticipantsBySessionIDsRow
+		if err := rows.Scan(
+			&i.ChatSessionID,
+			&i.AgentID,
+			&i.Role,
+			&i.AgentName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

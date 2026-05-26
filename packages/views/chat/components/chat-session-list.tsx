@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { chatIMSessionsOptions } from "@multica/core/chat/queries";
 import { useRequiredWorkspaceSlug } from "@multica/core/paths";
@@ -11,11 +12,22 @@ import { cn } from "@multica/ui/lib/utils";
 interface ChatSessionListProps {
   activeSessionId?: string;
   onSelectSession: (id: string) => void;
+  searchQuery?: string;
 }
 
-export function ChatSessionList({ activeSessionId, onSelectSession }: ChatSessionListProps) {
+export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery }: ChatSessionListProps) {
   const wsId = useRequiredWorkspaceSlug();
   const { data: sessions, isLoading } = useQuery(chatIMSessionsOptions(wsId));
+
+  const filtered = useMemo(() => {
+    if (!sessions || !searchQuery?.trim()) return sessions;
+    const q = searchQuery.toLowerCase();
+    return sessions.filter(
+      (s) =>
+        (s.title || "").toLowerCase().includes(q) ||
+        (s.last_message_preview || "").toLowerCase().includes(q),
+    );
+  }, [sessions, searchQuery]);
 
   if (isLoading) {
     return (
@@ -33,11 +45,11 @@ export function ChatSessionList({ activeSessionId, onSelectSession }: ChatSessio
     );
   }
 
-  if (!sessions || sessions.length === 0) {
+  if (!filtered || filtered.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <MessageSquare className="size-8 mb-2" />
-        <p className="text-sm">No conversations yet</p>
+        <p className="text-sm">{searchQuery ? "No matching chats" : "No conversations yet"}</p>
       </div>
     );
   }
@@ -45,7 +57,7 @@ export function ChatSessionList({ activeSessionId, onSelectSession }: ChatSessio
   return (
     <ScrollArea className="flex-1">
       <div className="flex flex-col">
-        {sessions.map((session) => (
+        {filtered.map((session) => (
           <button
             key={session.id}
             onClick={() => onSelectSession(session.id)}
