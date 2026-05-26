@@ -170,3 +170,60 @@ ORDER BY
      ORDER BY created_at DESC LIMIT 1),
     cs.updated_at
   ) DESC;
+
+-- name: UpsertChatSessionUserState :one
+INSERT INTO chat_session_user_state (chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_session_id, user_id)
+DO UPDATE SET
+  pinned_at = COALESCE(EXCLUDED.pinned_at, chat_session_user_state.pinned_at),
+  archived_at = COALESCE(EXCLUDED.archived_at, chat_session_user_state.archived_at),
+  last_read_at = COALESCE(EXCLUDED.last_read_at, chat_session_user_state.last_read_at),
+  updated_at = now()
+RETURNING *;
+
+-- name: GetChatSessionUserState :one
+SELECT * FROM chat_session_user_state
+WHERE chat_session_id = $1 AND user_id = $2;
+
+-- name: ClearChatSessionUserPinned :exec
+UPDATE chat_session_user_state
+SET pinned_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2;
+
+-- name: ClearChatSessionUserArchived :exec
+UPDATE chat_session_user_state
+SET archived_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2;
+
+-- name: ListChatSessionsForIMV2 :many
+-- IM session list with user_state join for pin/archive and last message preview.
+SELECT
+  cs.*,
+  (cs.unread_since IS NOT NULL)::bool AS has_unread,
+  us.pinned_at,
+  us.archived_at,
+  (SELECT content FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+  (SELECT created_at FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_at
+FROM chat_session cs
+LEFT JOIN chat_session_user_state us
+  ON us.chat_session_id = cs.id AND us.user_id = $2
+WHERE cs.workspace_id = $1
+  AND cs.creator_id = $2
+  AND (us.archived_at IS NULL OR $3::bool)
+ORDER BY
+  us.pinned_at DESC NULLS LAST,
+  COALESCE(
+    (SELECT created_at FROM chat_message
+     WHERE chat_session_id = cs.id
+     ORDER BY created_at DESC LIMIT 1),
+    cs.updated_at
+  ) DESC;
+
+-- name: UpdateChatSessionStatus :exec
+UPDATE chat_session SET status = $2, updated_at = now()
+WHERE id = $1;

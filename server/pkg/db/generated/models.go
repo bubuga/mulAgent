@@ -192,6 +192,17 @@ type ChatSession struct {
 	RuntimeID   pgtype.UUID        `json:"runtime_id"`
 }
 
+type ChatSessionUserState struct {
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	PinnedAt      pgtype.Timestamptz `json:"pinned_at"`
+	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
+	LastReadAt    pgtype.Timestamptz `json:"last_read_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Comment struct {
 	ID             pgtype.UUID        `json:"id"`
 	IssueID        pgtype.UUID        `json:"issue_id"`

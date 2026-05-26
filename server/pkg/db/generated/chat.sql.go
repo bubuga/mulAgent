@@ -696,3 +696,212 @@ func (q *Queries) UpdateChatSessionTitle(ctx context.Context, arg UpdateChatSess
 	)
 	return i, err
 }
+
+const upsertChatSessionUserState = `-- name: UpsertChatSessionUserState :one
+INSERT INTO chat_session_user_state (chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_session_id, user_id)
+DO UPDATE SET
+  pinned_at = COALESCE(EXCLUDED.pinned_at, chat_session_user_state.pinned_at),
+  archived_at = COALESCE(EXCLUDED.archived_at, chat_session_user_state.archived_at),
+  last_read_at = COALESCE(EXCLUDED.last_read_at, chat_session_user_state.last_read_at),
+  updated_at = now()
+RETURNING chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at, created_at, updated_at
+`
+
+type UpsertChatSessionUserStateParams struct {
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	PinnedAt      pgtype.Timestamptz `json:"pinned_at"`
+	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
+	LastReadAt    pgtype.Timestamptz `json:"last_read_at"`
+}
+
+func (q *Queries) UpsertChatSessionUserState(ctx context.Context, arg UpsertChatSessionUserStateParams) (ChatSessionUserState, error) {
+	row := q.db.QueryRow(ctx, upsertChatSessionUserState,
+		arg.ChatSessionID,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.PinnedAt,
+		arg.ArchivedAt,
+		arg.LastReadAt,
+	)
+	var i ChatSessionUserState
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.UserID,
+		&i.WorkspaceID,
+		&i.PinnedAt,
+		&i.ArchivedAt,
+		&i.LastReadAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getChatSessionUserState = `-- name: GetChatSessionUserState :one
+SELECT chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at, created_at, updated_at FROM chat_session_user_state
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type GetChatSessionUserStateParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetChatSessionUserState(ctx context.Context, arg GetChatSessionUserStateParams) (ChatSessionUserState, error) {
+	row := q.db.QueryRow(ctx, getChatSessionUserState, arg.ChatSessionID, arg.UserID)
+	var i ChatSessionUserState
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.UserID,
+		&i.WorkspaceID,
+		&i.PinnedAt,
+		&i.ArchivedAt,
+		&i.LastReadAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const clearChatSessionUserPinned = `-- name: ClearChatSessionUserPinned :exec
+UPDATE chat_session_user_state
+SET pinned_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type ClearChatSessionUserPinnedParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ClearChatSessionUserPinned(ctx context.Context, arg ClearChatSessionUserPinnedParams) error {
+	_, err := q.db.Exec(ctx, clearChatSessionUserPinned, arg.ChatSessionID, arg.UserID)
+	return err
+}
+
+const clearChatSessionUserArchived = `-- name: ClearChatSessionUserArchived :exec
+UPDATE chat_session_user_state
+SET archived_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type ClearChatSessionUserArchivedParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ClearChatSessionUserArchived(ctx context.Context, arg ClearChatSessionUserArchivedParams) error {
+	_, err := q.db.Exec(ctx, clearChatSessionUserArchived, arg.ChatSessionID, arg.UserID)
+	return err
+}
+
+const listChatSessionsForIMV2 = `-- name: ListChatSessionsForIMV2 :many
+SELECT
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+  (cs.unread_since IS NOT NULL)::bool AS has_unread,
+  us.pinned_at,
+  us.archived_at,
+  (SELECT content FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+  (SELECT created_at FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_at
+FROM chat_session cs
+LEFT JOIN chat_session_user_state us
+  ON us.chat_session_id = cs.id AND us.user_id = $2
+WHERE cs.workspace_id = $1
+  AND cs.creator_id = $2
+  AND (us.archived_at IS NULL OR $3::bool)
+ORDER BY
+  us.pinned_at DESC NULLS LAST,
+  COALESCE(
+    (SELECT created_at FROM chat_message
+     WHERE chat_session_id = cs.id
+     ORDER BY created_at DESC LIMIT 1),
+    cs.updated_at
+  ) DESC
+`
+
+type ListChatSessionsForIMV2Params struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+	Column3     bool        `json:"column_3"`
+}
+
+type ListChatSessionsForIMV2Row struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	CreatorID          pgtype.UUID        `json:"creator_id"`
+	Title              string             `json:"title"`
+	SessionID          pgtype.Text        `json:"session_id"`
+	WorkDir            pgtype.Text        `json:"work_dir"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince        pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	HasUnread          bool               `json:"has_unread"`
+	PinnedAt           pgtype.Timestamptz `json:"pinned_at"`
+	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
+	LastMessagePreview pgtype.Text        `json:"last_message_preview"`
+	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+}
+
+func (q *Queries) ListChatSessionsForIMV2(ctx context.Context, arg ListChatSessionsForIMV2Params) ([]ListChatSessionsForIMV2Row, error) {
+	rows, err := q.db.Query(ctx, listChatSessionsForIMV2, arg.WorkspaceID, arg.CreatorID, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatSessionsForIMV2Row{}
+	for rows.Next() {
+		var i ListChatSessionsForIMV2Row
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.CreatorID,
+			&i.Title,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UnreadSince,
+			&i.RuntimeID,
+			&i.HasUnread,
+			&i.PinnedAt,
+			&i.ArchivedAt,
+			&i.LastMessagePreview,
+			&i.LastMessageAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateChatSessionStatus = `-- name: UpdateChatSessionStatus :exec
+UPDATE chat_session SET status = $2, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateChatSessionStatusParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+}
+
+func (q *Queries) UpdateChatSessionStatus(ctx context.Context, arg UpdateChatSessionStatusParams) error {
+	_, err := q.db.Exec(ctx, updateChatSessionStatus, arg.ID, arg.Status)
+	return err
+}

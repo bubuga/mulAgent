@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -849,4 +850,172 @@ func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) C
 		ElapsedMs:     int8ToPtr(m.ElapsedMs),
 		Attachments:   attachments,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// User State: Pin / Archive / Read
+// ---------------------------------------------------------------------------
+
+func (h *Handler) PinChatSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+
+	_, err := h.Queries.UpsertChatSessionUserState(r.Context(), db.UpsertChatSessionUserStateParams{
+		ChatSessionID: session.ID,
+		UserID:        parseUUID(userID),
+		WorkspaceID:   parseUUID(workspaceID),
+		PinnedAt:      pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to pin session")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) UnpinChatSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+
+	if err := h.Queries.ClearChatSessionUserPinned(r.Context(), db.ClearChatSessionUserPinnedParams{
+		ChatSessionID: session.ID,
+		UserID:        parseUUID(userID),
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unpin session")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ArchiveChatSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+
+	_, err := h.Queries.UpsertChatSessionUserState(r.Context(), db.UpsertChatSessionUserStateParams{
+		ChatSessionID: session.ID,
+		UserID:        parseUUID(userID),
+		WorkspaceID:   parseUUID(workspaceID),
+		ArchivedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to archive session")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) UnarchiveChatSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+
+	if err := h.Queries.ClearChatSessionUserArchived(r.Context(), db.ClearChatSessionUserArchivedParams{
+		ChatSessionID: session.ID,
+		UserID:        parseUUID(userID),
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unarchive session")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------------------------------------------------------------------------
+// Legacy archive transition sync
+// ---------------------------------------------------------------------------
+
+// UpdateChatSessionStatus updates the legacy status field on a chat session.
+// This is a transition-period bridge for Desktop's PATCH {status: "archived"}
+// path — once Desktop migrates to the new archive API, this can be removed.
+func (h *Handler) UpdateChatSessionStatus(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	var req struct {
+		Status *string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Status == nil || (*req.Status != "archived" && *req.Status != "active") {
+		writeError(w, http.StatusBadRequest, "status must be 'archived' or 'active'")
+		return
+	}
+
+	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+
+	if err := h.Queries.UpdateChatSessionStatus(r.Context(), db.UpdateChatSessionStatusParams{
+		ID:     session.ID,
+		Status: *req.Status,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update session status")
+		return
+	}
+
+	// Transition sync: mirror legacy status changes into user_state.
+	if *req.Status == "archived" {
+		_, syncErr := h.Queries.UpsertChatSessionUserState(r.Context(), db.UpsertChatSessionUserStateParams{
+			ChatSessionID: session.ID,
+			UserID:        parseUUID(userID),
+			WorkspaceID:   parseUUID(workspaceID),
+			ArchivedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		})
+		if syncErr != nil {
+			slog.Warn("transition sync: failed to write user_state.archived_at from legacy archive",
+				"session_id", sessionID, "error", syncErr)
+		}
+	} else {
+		syncErr := h.Queries.ClearChatSessionUserArchived(r.Context(), db.ClearChatSessionUserArchivedParams{
+			ChatSessionID: session.ID,
+			UserID:        parseUUID(userID),
+		})
+		if syncErr != nil {
+			slog.Warn("transition sync: failed to clear user_state.archived_at from legacy unarchive",
+				"session_id", sessionID, "error", syncErr)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, chatSessionToResponse(session))
 }
