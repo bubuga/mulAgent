@@ -1371,6 +1371,22 @@ export class ApiClient {
     await this.fetch(`/api/chat/sessions/${sessionId}/read`, { method: "POST" });
   }
 
+  async pinChatSession(sessionId: string): Promise<void> {
+    await this.fetch(`/api/chat/sessions/${sessionId}/pin`, { method: "POST" });
+  }
+
+  async unpinChatSession(sessionId: string): Promise<void> {
+    await this.fetch(`/api/chat/sessions/${sessionId}/pin`, { method: "DELETE" });
+  }
+
+  async archiveChatSession(sessionId: string): Promise<void> {
+    await this.fetch(`/api/chat/sessions/${sessionId}/archive`, { method: "POST" });
+  }
+
+  async unarchiveChatSession(sessionId: string): Promise<void> {
+    await this.fetch(`/api/chat/sessions/${sessionId}/unarchive`, { method: "POST" });
+  }
+
   async cancelTaskById(taskId: string): Promise<void> {
     await this.fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
   }

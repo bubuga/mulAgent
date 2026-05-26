@@ -139,3 +139,51 @@ export function useDeleteChatSession() {
     },
   });
 }
+
+export function usePinChatSession() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (sessionId: string) => api.pinChatSession(sessionId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
+    },
+  });
+}
+
+export function useUnpinChatSession() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (sessionId: string) => api.unpinChatSession(sessionId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
+    },
+  });
+}
+
+export function useArchiveChatSession() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (sessionId: string) => api.archiveChatSession(sessionId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
+    },
+  });
+}
+
+export function useUnarchiveChatSession() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (sessionId: string) => api.unarchiveChatSession(sessionId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
+    },
+  });
+}
