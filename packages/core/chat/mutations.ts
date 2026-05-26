@@ -24,6 +24,7 @@ export function useCreateChatSession() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
     },
   });
 }
@@ -60,6 +61,7 @@ export function useMarkChatSessionRead() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
     },
   });
 }
@@ -99,6 +101,7 @@ export function useUpdateChatSession() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
     },
   });
 }
@@ -136,6 +139,7 @@ export function useDeleteChatSession() {
     onSettled: (_data, _err, sessionId) => {
       logger.debug("deleteChatSession.settled", { sessionId });
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
     },
   });
 }

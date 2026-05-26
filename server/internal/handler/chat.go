@@ -121,10 +121,12 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	var resp []ChatSessionResponse
 
 	if view == "im" {
-		// IM-first view: includes last message preview, sorted by activity.
-		rows, err := h.Queries.ListChatSessionsForIM(r.Context(), db.ListChatSessionsForIMParams{
+		// IM-first view: includes pin/archive state, last message preview, sorted by activity.
+		includeArchived := r.URL.Query().Get("archived") == "true"
+		rows, err := h.Queries.ListChatSessionsForIMV2(r.Context(), db.ListChatSessionsForIMV2Params{
 			WorkspaceID: parseUUID(workspaceID),
 			CreatorID:   parseUUID(userID),
+			Column3:     includeArchived,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
@@ -173,7 +175,12 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				CreatedAt:   timestampToString(s.CreatedAt),
 				UpdatedAt:   timestampToString(s.UpdatedAt),
 				Kind:        kind,
+				IsPinned:    s.PinnedAt.Valid,
 				Participants: parts,
+			}
+			if s.ArchivedAt.Valid {
+				ts := timestampToString(s.ArchivedAt)
+				item.ArchivedAt = &ts
 			}
 			if s.LastMessagePreview.Valid {
 				item.LastMessagePreview = &s.LastMessagePreview.String
@@ -187,7 +194,6 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				ql := strings.ToLower(q)
 				titleMatch := strings.Contains(strings.ToLower(s.Title), ql)
 				contentMatch := s.LastMessagePreview.Valid && strings.Contains(strings.ToLower(s.LastMessagePreview.String), ql)
-				// Also search participant names.
 				nameMatch := false
 				for _, p := range parts {
 					if strings.Contains(strings.ToLower(p.Name), ql) {
@@ -323,14 +329,13 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateChatSessionRequest struct {
-	Title *string `json:"title"`
+	Title  *string `json:"title"`
+	Status *string `json:"status"` // legacy compat: "archived" or "active"
 }
 
-// UpdateChatSession updates user-editable fields on a chat session — today
-// just `title`, surfaced by the inline rename affordance in the session
-// dropdown. Title is the only field accepted: `status` is legacy + read-only,
-// agent/creator/workspace are immutable, the resume pointers
-// (session_id / work_dir / runtime_id) are daemon-owned.
+// UpdateChatSession updates user-editable fields on a chat session.
+// Accepts optional `title` for rename and optional `status` for legacy
+// archive/unarchive compatibility. At least one field must be provided.
 func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
@@ -344,42 +349,73 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Title == nil {
-		writeError(w, http.StatusBadRequest, "title is required")
-		return
-	}
-	title := strings.TrimSpace(*req.Title)
-	if title == "" {
-		writeError(w, http.StatusBadRequest, "title is required")
-		return
-	}
-	if len([]rune(title)) > chatSessionTitleMaxLen {
-		writeError(w, http.StatusBadRequest, "title is too long")
-		return
-	}
 
 	session, ok := h.gateChatSessionForUser(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
 	}
 
-	updated, err := h.Queries.UpdateChatSessionTitle(r.Context(), db.UpdateChatSessionTitleParams{
-		ID:    session.ID,
-		Title: title,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update chat session")
+	// Handle title update.
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			writeError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+		if len([]rune(title)) > chatSessionTitleMaxLen {
+			writeError(w, http.StatusBadRequest, "title is too long")
+			return
+		}
+		updated, err := h.Queries.UpdateChatSessionTitle(r.Context(), db.UpdateChatSessionTitleParams{
+			ID:    session.ID,
+			Title: title,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update chat session")
+			return
+		}
+		resolvedSessionID := uuidToString(updated.ID)
+		h.publishChat(protocol.EventChatSessionUpdated, workspaceID, "member", userID, resolvedSessionID, protocol.ChatSessionUpdatedPayload{
+			ChatSessionID: resolvedSessionID,
+			Title:         updated.Title,
+			UpdatedAt:     timestampToString(updated.UpdatedAt),
+		})
+		writeJSON(w, http.StatusOK, chatSessionToResponse(updated))
 		return
 	}
 
-	resolvedSessionID := uuidToString(updated.ID)
-	h.publishChat(protocol.EventChatSessionUpdated, workspaceID, "member", userID, resolvedSessionID, protocol.ChatSessionUpdatedPayload{
-		ChatSessionID: resolvedSessionID,
-		Title:         updated.Title,
-		UpdatedAt:     timestampToString(updated.UpdatedAt),
-	})
-
-	writeJSON(w, http.StatusOK, chatSessionToResponse(updated))
+	// Handle legacy status update with transition sync to user_state.
+	if req.Status != nil {
+		if *req.Status != "archived" && *req.Status != "active" {
+			writeError(w, http.StatusBadRequest, "status must be 'archived' or 'active'")
+			return
+		}
+		if err := h.Queries.UpdateChatSessionStatus(r.Context(), db.UpdateChatSessionStatusParams{
+			ID:     session.ID,
+			Status: *req.Status,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update session status")
+			return
+		}
+		// Transition sync: mirror to user_state.
+		if *req.Status == "archived" {
+			_, _ = h.Queries.UpsertChatSessionUserState(r.Context(), db.UpsertChatSessionUserStateParams{
+				ChatSessionID: session.ID,
+				UserID:        parseUUID(userID),
+				WorkspaceID:   parseUUID(workspaceID),
+				ArchivedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			})
+		} else {
+			_ = h.Queries.ClearChatSessionUserArchived(r.Context(), db.ClearChatSessionUserArchivedParams{
+				ChatSessionID: session.ID,
+				UserID:        parseUUID(userID),
+			})
+		}
+		// Re-fetch to return updated session.
+		updated, _ := h.Queries.GetChatSession(r.Context(), session.ID)
+		writeJSON(w, http.StatusOK, chatSessionToResponse(updated))
+		return
+	}
 }
 
 // DeleteChatSession hard-deletes a chat session owned by the caller. The
@@ -839,6 +875,8 @@ type ChatSessionResponse struct {
 	// IM view fields — populated when view=im.
 	Kind               string              `json:"kind,omitempty"`
 	Participants       []ParticipantResponse `json:"participants,omitempty"`
+	IsPinned           bool                `json:"is_pinned,omitempty"`
+	ArchivedAt         *string             `json:"archived_at,omitempty"`
 	LastMessagePreview *string             `json:"last_message_preview,omitempty"`
 	LastMessageAt      *string             `json:"last_message_at,omitempty"`
 }
