@@ -113,12 +113,58 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	view := r.URL.Query().Get("view")
 	status := r.URL.Query().Get("status")
+	q := r.URL.Query().Get("q")
 
-	// Two call sites → two row types with identical shape. Collect into a
-	// common response slice via small per-branch loops.
 	var resp []ChatSessionResponse
-	if status == "all" {
+
+	if view == "im" {
+		// IM-first view: includes last message preview, sorted by activity.
+		rows, err := h.Queries.ListChatSessionsForIM(r.Context(), db.ListChatSessionsForIMParams{
+			WorkspaceID: parseUUID(workspaceID),
+			CreatorID:   parseUUID(userID),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
+			return
+		}
+		resp = make([]ChatSessionResponse, 0, len(rows))
+		for _, s := range rows {
+			if _, ok := allowed[uuidToString(s.AgentID)]; !ok {
+				continue
+			}
+			item := ChatSessionResponse{
+				ID:          uuidToString(s.ID),
+				WorkspaceID: uuidToString(s.WorkspaceID),
+				AgentID:     uuidToString(s.AgentID),
+				CreatorID:   uuidToString(s.CreatorID),
+				Title:       s.Title,
+				Status:      s.Status,
+				HasUnread:   s.HasUnread,
+				CreatedAt:   timestampToString(s.CreatedAt),
+				UpdatedAt:   timestampToString(s.UpdatedAt),
+			}
+			if s.LastMessagePreview.Valid {
+				item.LastMessagePreview = &s.LastMessagePreview.String
+			}
+			if s.LastMessageAt.Valid {
+				ts := timestampToString(s.LastMessageAt)
+				item.LastMessageAt = &ts
+			}
+			// Filter by search query.
+			if q != "" {
+				ql := strings.ToLower(q)
+				titleMatch := strings.Contains(strings.ToLower(s.Title), ql)
+				contentMatch := s.LastMessagePreview.Valid && strings.Contains(strings.ToLower(s.LastMessagePreview.String), ql)
+				if !titleMatch && !contentMatch {
+					continue
+				}
+			}
+			resp = append(resp, item)
+		}
+	} else if status == "all" {
+		// Legacy: all sessions including archived.
 		rows, err := h.Queries.ListAllChatSessionsByCreator(r.Context(), db.ListAllChatSessionsByCreatorParams{
 			WorkspaceID: parseUUID(workspaceID),
 			CreatorID:   parseUUID(userID),
@@ -145,6 +191,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	} else {
+		// Legacy default: active sessions only.
 		rows, err := h.Queries.ListChatSessionsByCreator(r.Context(), db.ListChatSessionsByCreatorParams{
 			WorkspaceID: parseUUID(workspaceID),
 			CreatorID:   parseUUID(userID),
@@ -751,6 +798,9 @@ type ChatSessionResponse struct {
 	HasUnread bool   `json:"has_unread"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	// IM view fields — populated when view=im.
+	LastMessagePreview *string `json:"last_message_preview,omitempty"`
+	LastMessageAt      *string `json:"last_message_at,omitempty"`
 }
 
 type ChatMessageResponse struct {

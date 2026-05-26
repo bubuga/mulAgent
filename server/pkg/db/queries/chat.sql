@@ -147,3 +147,26 @@ WHERE id = $1;
 -- unread boundary stable across multiple incoming replies.
 UPDATE chat_session SET unread_since = now()
 WHERE id = $1 AND unread_since IS NULL;
+
+-- name: ListChatSessionsForIM :many
+-- IM-first session list with last message preview and sort by activity.
+SELECT
+  cs.*,
+  (cs.unread_since IS NOT NULL)::bool AS has_unread,
+  (SELECT content FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+  (SELECT created_at FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_at
+FROM chat_session cs
+WHERE cs.workspace_id = $1
+  AND cs.creator_id = $2
+  AND cs.status = 'active'
+ORDER BY
+  COALESCE(
+    (SELECT created_at FROM chat_message
+     WHERE chat_session_id = cs.id
+     ORDER BY created_at DESC LIMIT 1),
+    cs.updated_at
+  ) DESC;

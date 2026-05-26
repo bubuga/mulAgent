@@ -455,6 +455,89 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 	return items, nil
 }
 
+const listChatSessionsForIM = `-- name: ListChatSessionsForIM :many
+SELECT
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+  (cs.unread_since IS NOT NULL)::bool AS has_unread,
+  (SELECT content FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+  (SELECT created_at FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_at
+FROM chat_session cs
+WHERE cs.workspace_id = $1
+  AND cs.creator_id = $2
+  AND cs.status = 'active'
+ORDER BY
+  COALESCE(
+    (SELECT created_at FROM chat_message
+     WHERE chat_session_id = cs.id
+     ORDER BY created_at DESC LIMIT 1),
+    cs.updated_at
+  ) DESC
+`
+
+type ListChatSessionsForIMParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+}
+
+type ListChatSessionsForIMRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	CreatorID          pgtype.UUID        `json:"creator_id"`
+	Title              string             `json:"title"`
+	SessionID          pgtype.Text        `json:"session_id"`
+	WorkDir            pgtype.Text        `json:"work_dir"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince        pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	HasUnread          bool               `json:"has_unread"`
+	LastMessagePreview pgtype.Text        `json:"last_message_preview"`
+	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+}
+
+// IM-first session list with last message preview and sort by activity.
+func (q *Queries) ListChatSessionsForIM(ctx context.Context, arg ListChatSessionsForIMParams) ([]ListChatSessionsForIMRow, error) {
+	rows, err := q.db.Query(ctx, listChatSessionsForIM, arg.WorkspaceID, arg.CreatorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatSessionsForIMRow{}
+	for rows.Next() {
+		var i ListChatSessionsForIMRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.CreatorID,
+			&i.Title,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UnreadSince,
+			&i.RuntimeID,
+			&i.HasUnread,
+			&i.LastMessagePreview,
+			&i.LastMessageAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingChatTasksByCreator = `-- name: ListPendingChatTasksByCreator :many
 SELECT atq.id AS task_id, atq.status, atq.chat_session_id
 FROM agent_task_queue atq
