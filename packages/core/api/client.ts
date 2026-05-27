@@ -1304,7 +1304,13 @@ export class ApiClient {
     });
   }
 
-  async createChatSession(data: { agent_id: string; title?: string }): Promise<ChatSession> {
+  async createChatSession(data: {
+    kind?: "direct" | "group";
+    agent_id?: string;
+    agent_ids?: string[];
+    orchestrator_agent_id?: string;
+    title?: string;
+  }): Promise<ChatSession> {
     const raw = await this.fetch<unknown>("/api/chat/sessions", {
       method: "POST",
       body: JSON.stringify(data),

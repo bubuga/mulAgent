@@ -12,8 +12,14 @@ export function useCreateChatSession() {
   const wsId = useWorkspaceId();
 
   return useMutation({
-    mutationFn: (data: { agent_id: string; title?: string }) => {
-      logger.info("createChatSession.start", { agent_id: data.agent_id, titleLength: data.title?.length ?? 0 });
+    mutationFn: (data: {
+      kind?: "direct" | "group";
+      agent_id?: string;
+      agent_ids?: string[];
+      orchestrator_agent_id?: string;
+      title?: string;
+    }) => {
+      logger.info("createChatSession.start", { kind: data.kind, titleLength: data.title?.length ?? 0 });
       return api.createChatSession(data);
     },
     onSuccess: (session) => {
