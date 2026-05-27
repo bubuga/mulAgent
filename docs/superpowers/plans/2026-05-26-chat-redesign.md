@@ -651,6 +651,12 @@ Expected:
 
 ### Task 1: Add `chat_session_agents`
 
+**PK decision:** v1 uses composite PK `(chat_session_id, agent_id)` instead of `id UUID PRIMARY KEY`. Rationale:
+- v1 is personal single-user IM; no member lifecycle (remove/rejoin) needed.
+- Composite PK naturally prevents duplicate active participants.
+- Avoids table rebuild that would risk already-verified PR2/PR3 data.
+- Future multi-user extension can add `id UUID` + partial unique index via new migration.
+
 - [ ] Create table:
 
 ```sql

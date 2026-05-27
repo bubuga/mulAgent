@@ -44,6 +44,12 @@ interface ChatInputProps {
   /** Rendered inside the rounded container, above the editor — attached
    *  context cards, drafts, etc. */
   topSlot?: ReactNode;
+  /** Override the Zustand draft storage key. Used by Web main chat to scope
+   *  drafts to the selected IM session instead of the global ChatWindow store. */
+  draftKeyOverride?: string;
+  /** Override the React key on ContentEditor. Prevents editor remount when
+   *  the global store's selectedAgentId differs from the IM session's agent. */
+  editorKeyOverride?: string;
 }
 
 export function ChatInput({
@@ -57,6 +63,8 @@ export function ChatInput({
   leftAdornment,
   rightAdornment,
   topSlot,
+  draftKeyOverride,
+  editorKeyOverride,
 }: ChatInputProps) {
   const { t } = useT("chat");
   const editorRef = useRef<ContentEditorRef>(null);
@@ -83,9 +91,10 @@ export function ChatInput({
   // user would see the image flash on then disappear. Keeping editor
   // identity stable across the lazy-create event is what makes
   // first-upload-creates-session work the same as second-upload.
-  const draftKey =
+  const fallbackDraftKey =
     activeSessionId ?? `${DRAFT_NEW_SESSION}:${selectedAgentId ?? ""}`;
-  const editorKey = selectedAgentId ?? "no-agent";
+  const draftKey = draftKeyOverride ?? fallbackDraftKey;
+  const editorKey = editorKeyOverride ?? selectedAgentId ?? "no-agent";
   // Select a primitive — empty-string fallback keeps referential stability.
   const inputDraft = useChatStore((s) => s.inputDrafts[draftKey] ?? "");
   const setInputDraft = useChatStore((s) => s.setInputDraft);
