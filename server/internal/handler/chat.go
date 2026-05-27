@@ -1012,6 +1012,13 @@ func (h *Handler) ArchiveChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to archive session")
 		return
 	}
+
+	// Also set legacy chat_session.status for consistency.
+	_ = h.Queries.UpdateChatSessionStatus(r.Context(), db.UpdateChatSessionStatusParams{
+		ID:     session.ID,
+		Status: "archived",
+	})
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1035,6 +1042,15 @@ func (h *Handler) UnarchiveChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to unarchive session")
 		return
 	}
+
+	// Also reset legacy chat_session.status to 'active' for consistency.
+	// Without this, sessions archived via legacy PATCH would stay status='archived'
+	// even after unarchive, causing them to appear in the IM list with wrong state.
+	_ = h.Queries.UpdateChatSessionStatus(r.Context(), db.UpdateChatSessionStatusParams{
+		ID:     session.ID,
+		Status: "active",
+	})
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
