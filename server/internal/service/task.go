@@ -1831,15 +1831,27 @@ func (s *TaskService) broadcastChatDone(ctx context.Context, task db.AgentTaskQu
 	payload := protocol.ChatDonePayload{
 		ChatSessionID: util.UUIDToString(task.ChatSessionID),
 		TaskID:        util.UUIDToString(task.ID),
+		AgentID:       util.UUIDToString(task.AgentID),
 	}
 	if msg != nil {
 		payload.MessageID = util.UUIDToString(msg.ID)
 		payload.Content = msg.Content
+		payload.MessageType = msg.MessageType
 		if msg.CreatedAt.Valid {
 			payload.CreatedAt = msg.CreatedAt.Time.UTC().Format(time.RFC3339Nano)
 		}
 		if msg.ElapsedMs.Valid {
 			payload.ElapsedMs = msg.ElapsedMs.Int64
+		}
+		// Unmarshal metadata JSONB into map for frontend consumption.
+		if len(msg.Metadata) > 0 {
+			var meta map[string]interface{}
+			if json.Unmarshal(msg.Metadata, &meta) == nil {
+				payload.Metadata = meta
+			}
+		}
+		if payload.Metadata == nil {
+			payload.Metadata = map[string]interface{}{}
 		}
 	}
 	s.Bus.Publish(events.Event{

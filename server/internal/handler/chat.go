@@ -205,7 +205,9 @@ func (h *Handler) createGroupChat(w http.ResponseWriter, r *http.Request, userID
 
 	// Build default title from agent names.
 	title := req.Title
+	titleSource := "manual"
 	if title == "" {
+		titleSource = "agent_names"
 		names := make([]string, 0, len(uniqueIDs))
 		for _, idStr := range uniqueIDs {
 			agent, _ := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
@@ -219,8 +221,6 @@ func (h *Handler) createGroupChat(w http.ResponseWriter, r *http.Request, userID
 		if len(names) > 0 {
 			title = strings.Join(names, ", ")
 		}
-		titleSource := "agent_names"
-		_ = titleSource
 	}
 
 	tx, err := h.TxStarter.Begin(r.Context())
@@ -239,7 +239,7 @@ func (h *Handler) createGroupChat(w http.ResponseWriter, r *http.Request, userID
 		Title:               title,
 		Kind:                "group",
 		OrchestratorAgentID: orchestratorID,
-		TitleSource:         "agent_names",
+		TitleSource:         titleSource,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create group chat session")
@@ -757,7 +757,56 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the user message first so the daemon can always find it.
+	// Determine target agent for task routing BEFORE creating the user message.
+	// This ensures invalid mentions return 400 without leaving orphan messages.
+	// Direct chat: always use session's default agent.
+	// Group chat: validate all mention IDs, then route:
+	//   0 mentions → orchestrator
+	//   1 mention → that agent
+	//   2+ mentions → orchestrator
+	targetAgentID := session.AgentID
+	if session.Kind == "group" && len(req.MentionIDs) > 0 {
+		// Deduplicate mention IDs.
+		seen := make(map[string]bool)
+		uniqueMentions := make([]string, 0, len(req.MentionIDs))
+		for _, id := range req.MentionIDs {
+			if !seen[id] {
+				seen[id] = true
+				uniqueMentions = append(uniqueMentions, id)
+			}
+		}
+
+		// Parse ALL mention IDs as UUIDs — reject any invalid UUID.
+		mentionUUIDs := make([]pgtype.UUID, 0, len(uniqueMentions))
+		for _, id := range uniqueMentions {
+			uuid, ok := parseUUIDOrBadRequest(w, id, "mention_id")
+			if !ok {
+				return
+			}
+			mentionUUIDs = append(mentionUUIDs, uuid)
+		}
+
+		// Validate ALL mention IDs are active participants in this session.
+		parts, _ := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), []pgtype.UUID{session.ID})
+		participantSet := make(map[string]bool, len(parts))
+		for _, p := range parts {
+			participantSet[uuidToString(p.AgentID)] = true
+		}
+		for _, id := range uniqueMentions {
+			if !participantSet[id] {
+				writeError(w, http.StatusBadRequest, "mentioned agent is not a participant in this chat")
+				return
+			}
+		}
+
+		// Route based on mention count.
+		if len(uniqueMentions) == 1 {
+			targetAgentID = mentionUUIDs[0]
+		}
+		// 0 or 2+ mentions: use orchestrator (session.AgentID for group = orchestrator).
+	}
+
+	// Create the user message after validation passes.
 	msg, err := h.Queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
 		ChatSessionID: session.ID,
 		Role:          "user",
@@ -784,44 +833,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 			// the attachments remain on the session (still downloadable).
 			slog.Warn("link chat attachments failed", "error", err, "message_id", uuidToString(msg.ID))
 		}
-	}
-
-	// Determine target agent for task routing.
-	// Direct chat: always use session's default agent.
-	// Group chat: 0 or 2+ mentions → orchestrator; 1 mention → that agent.
-	targetAgentID := session.AgentID
-	if session.Kind == "group" && len(req.MentionIDs) > 0 {
-		// Deduplicate and validate mentions against participants.
-		seen := make(map[string]bool)
-		uniqueMentions := make([]string, 0, len(req.MentionIDs))
-		for _, id := range req.MentionIDs {
-			if !seen[id] {
-				seen[id] = true
-				uniqueMentions = append(uniqueMentions, id)
-			}
-		}
-		if len(uniqueMentions) == 1 {
-			// Single mention: route directly to that agent.
-			mentionUUID, ok := parseUUIDOrBadRequest(w, uniqueMentions[0], "mention_id")
-			if !ok {
-				return
-			}
-			// Validate the mentioned agent is a participant.
-			isParticipant := false
-			parts, _ := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), []pgtype.UUID{session.ID})
-			for _, p := range parts {
-				if uuidToString(p.AgentID) == uniqueMentions[0] {
-					isParticipant = true
-					break
-				}
-			}
-			if !isParticipant {
-				writeError(w, http.StatusBadRequest, "mentioned agent is not a participant in this chat")
-				return
-			}
-			targetAgentID = mentionUUID
-		}
-		// 0 or 2+ mentions: use orchestrator (session.AgentID for group = orchestrator).
 	}
 
 	// Enqueue a chat task after the message exists.
@@ -851,7 +862,8 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		taskContext.Provider,
 	))
 
-	// Broadcast the user message.
+	// Broadcast the user message. agent_id is empty for user messages —
+	// it identifies "who sent", not "who receives the task".
 	resolvedSessionID := uuidToString(session.ID)
 	h.publishChat(protocol.EventChatMessage, workspaceID, "member", userID, resolvedSessionID, protocol.ChatMessagePayload{
 		ChatSessionID: resolvedSessionID,
@@ -860,6 +872,8 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		Content:       req.Content,
 		TaskID:        uuidToString(task.ID),
 		CreatedAt:     timestampToString(msg.CreatedAt),
+		MessageType:   "text",
+		Metadata:      map[string]interface{}{},
 	})
 
 	writeJSON(w, http.StatusCreated, SendChatMessageResponse{

@@ -96,6 +96,9 @@ export function applyChatDoneToCache(
           task_id: taskId,
           created_at: payload.created_at ?? new Date().toISOString(),
           elapsed_ms: payload.elapsed_ms ?? null,
+          agent_id: payload.agent_id,
+          message_type: payload.message_type,
+          metadata: payload.metadata,
         };
         return [...old, assistant];
       },

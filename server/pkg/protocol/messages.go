@@ -66,12 +66,15 @@ type RuntimeInfo struct {
 
 // ChatMessagePayload is broadcast when a new chat message is created.
 type ChatMessagePayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-	MessageID     string `json:"message_id"`
-	Role          string `json:"role"`
-	Content       string `json:"content"`
-	TaskID        string `json:"task_id,omitempty"`
-	CreatedAt     string `json:"created_at"`
+	ChatSessionID string                 `json:"chat_session_id"`
+	MessageID     string                 `json:"message_id"`
+	Role          string                 `json:"role"`
+	Content       string                 `json:"content"`
+	TaskID        string                 `json:"task_id,omitempty"`
+	CreatedAt     string                 `json:"created_at"`
+	AgentID       string                 `json:"agent_id,omitempty"`
+	MessageType   string                 `json:"message_type,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ChatDonePayload is broadcast when an agent finishes responding to a chat
@@ -80,12 +83,15 @@ type ChatMessagePayload struct {
 // during the live-timeline → AssistantMessage handoff that previously caused
 // a visible flicker (#2123).
 type ChatDonePayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-	TaskID        string `json:"task_id"`
-	MessageID     string `json:"message_id,omitempty"`
-	Content       string `json:"content,omitempty"`
-	ElapsedMs     int64  `json:"elapsed_ms,omitempty"`
-	CreatedAt     string `json:"created_at,omitempty"`
+	ChatSessionID string                 `json:"chat_session_id"`
+	TaskID        string                 `json:"task_id"`
+	MessageID     string                 `json:"message_id,omitempty"`
+	Content       string                 `json:"content,omitempty"`
+	ElapsedMs     int64                  `json:"elapsed_ms,omitempty"`
+	CreatedAt     string                 `json:"created_at,omitempty"`
+	AgentID       string                 `json:"agent_id,omitempty"`
+	MessageType   string                 `json:"message_type,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ChatSessionReadPayload is broadcast when the creator marks a session as read.
