@@ -232,7 +232,7 @@ func (q *Queries) GetChatMessage(ctx context.Context, id pgtype.UUID) (ChatMessa
 }
 
 const getChatSession = `-- name: GetChatSession :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, kind, orchestrator_agent_id, title_source FROM chat_session
 WHERE id = $1
 `
 
@@ -252,12 +252,15 @@ func (q *Queries) GetChatSession(ctx context.Context, id pgtype.UUID) (ChatSessi
 		&i.UpdatedAt,
 		&i.UnreadSince,
 		&i.RuntimeID,
+		&i.Kind,
+		&i.OrchestratorAgentID,
+		&i.TitleSource,
 	)
 	return i, err
 }
 
 const getChatSessionInWorkspace = `-- name: GetChatSessionInWorkspace :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, kind, orchestrator_agent_id, title_source FROM chat_session
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -282,6 +285,9 @@ func (q *Queries) GetChatSessionInWorkspace(ctx context.Context, arg GetChatSess
 		&i.UpdatedAt,
 		&i.UnreadSince,
 		&i.RuntimeID,
+		&i.Kind,
+		&i.OrchestratorAgentID,
+		&i.TitleSource,
 	)
 	return i, err
 }
