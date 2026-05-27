@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -27,6 +27,7 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const markRead = useMarkChatSessionRead();
+  const markReadInFlightRef = useRef<string | null>(null);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
 
   const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
@@ -45,8 +46,21 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
 
   // Mark read on open when session has unread.
   useEffect(() => {
-    if (!session?.has_unread) return;
-    markRead.mutate(sessionId);
+    if (!session?.has_unread) {
+      if (markReadInFlightRef.current === sessionId) {
+        markReadInFlightRef.current = null;
+      }
+      return;
+    }
+    if (markReadInFlightRef.current === sessionId || markRead.isPending) return;
+    markReadInFlightRef.current = sessionId;
+    markRead.mutate(sessionId, {
+      onSettled: () => {
+        if (markReadInFlightRef.current === sessionId) {
+          markReadInFlightRef.current = null;
+        }
+      },
+    });
   }, [markRead, session?.has_unread, sessionId]);
 
   const handleSend = useCallback(

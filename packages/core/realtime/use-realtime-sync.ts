@@ -689,7 +689,10 @@ export function useRealtimeSync(
     };
     const invalidateSessionLists = () => {
       const id = getCurrentWsId();
-      if (id) qc.invalidateQueries({ queryKey: chatKeys.sessions(id) });
+      if (id) {
+        qc.invalidateQueries({ queryKey: chatKeys.sessions(id) });
+        qc.invalidateQueries({ queryKey: chatKeys.imSessions(id) });
+      }
     };
 
     const unsubChatMessage = ws.on("chat:message", (p) => {
@@ -821,7 +824,16 @@ export function useRealtimeSync(
     const unsubChatSessionRead = ws.on("chat:session_read", (p) => {
       const payload = p as { chat_session_id: string };
       chatWsLogger.info("chat:session_read (global)", payload);
-      invalidateSessionLists();
+      const id = getCurrentWsId();
+      if (!id) return;
+      const clearUnread = <T extends { id: string; has_unread?: boolean }>(
+        old?: T[],
+      ) =>
+        old?.map((s) =>
+          s.id === payload.chat_session_id ? { ...s, has_unread: false } : s,
+        );
+      qc.setQueryData(chatKeys.sessions(id), clearUnread);
+      qc.setQueryData(chatKeys.imSessions(id), clearUnread);
     });
 
     // chat:session_updated fires after the creator renames a session in

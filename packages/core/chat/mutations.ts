@@ -52,18 +52,22 @@ export function useMarkChatSessionRead() {
     },
     onMutate: async (sessionId) => {
       await qc.cancelQueries({ queryKey: chatKeys.sessions(wsId) });
+      await qc.cancelQueries({ queryKey: chatKeys.imSessions(wsId) });
 
       const prevSessions = qc.getQueryData<ChatSession[]>(chatKeys.sessions(wsId));
+      const prevImSessions = qc.getQueryData<ChatSession[]>(chatKeys.imSessions(wsId));
 
       const clear = (old?: ChatSession[]) =>
         old?.map((s) => (s.id === sessionId ? { ...s, has_unread: false } : s));
       qc.setQueryData<ChatSession[]>(chatKeys.sessions(wsId), clear);
+      qc.setQueryData<ChatSession[]>(chatKeys.imSessions(wsId), clear);
 
-      return { prevSessions };
+      return { prevSessions, prevImSessions };
     },
     onError: (err, sessionId, ctx) => {
       logger.error("markChatSessionRead.error.rollback", { sessionId, err });
       if (ctx?.prevSessions) qc.setQueryData(chatKeys.sessions(wsId), ctx.prevSessions);
+      if (ctx?.prevImSessions) qc.setQueryData(chatKeys.imSessions(wsId), ctx.prevImSessions);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
