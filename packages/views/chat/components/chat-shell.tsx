@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChatSessionList } from "./chat-session-list";
 import { ChatMainArea } from "./chat-main-area";
 import { ChatNavigationDrawer } from "./chat-navigation-drawer";
+import { NewChatDialog } from "./new-chat-dialog";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Plus, Search } from "lucide-react";
@@ -11,6 +12,7 @@ import { Plus, Search } from "lucide-react";
 export function ChatShell() {
   const [activeSessionId, setActiveSessionId] = useState<string>();
   const [searchQuery, setSearchQuery] = useState("");
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   return (
     <div className="flex h-full">
@@ -18,7 +20,12 @@ export function ChatShell() {
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <ChatNavigationDrawer />
           <h2 className="flex-1 text-sm font-semibold">Chats</h2>
-          <Button variant="ghost" size="icon" aria-label="New chat">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="New chat"
+            onClick={() => setNewChatOpen(true)}
+          >
             <Plus className="size-4" />
           </Button>
         </div>
@@ -40,6 +47,11 @@ export function ChatShell() {
         />
       </div>
       <ChatMainArea sessionId={activeSessionId} />
+      <NewChatDialog
+        open={newChatOpen}
+        onOpenChange={setNewChatOpen}
+        onSessionCreated={setActiveSessionId}
+      />
     </div>
   );
 }
