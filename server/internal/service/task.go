@@ -1107,6 +1107,9 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 				Content:       redact.Text(body),
 				TaskID:        task.ID,
 				ElapsedMs:     computeChatElapsedMs(task),
+				AgentID:       task.AgentID,
+				MessageType:   pgtype.Text{String: "text", Valid: true},
+				Metadata:      []byte("{}"),
 			})
 			if err != nil {
 				slog.Error("failed to save assistant chat message", "task_id", util.UUIDToString(task.ID), "error", err)
@@ -1236,6 +1239,9 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			TaskID:        pgtype.UUID{Bytes: task.ID.Bytes, Valid: true},
 			FailureReason: pgtype.Text{String: failureReason, Valid: failureReason != ""},
 			ElapsedMs:     computeChatElapsedMs(task),
+			AgentID:       task.AgentID,
+			MessageType:   pgtype.Text{String: "text", Valid: true},
+			Metadata:      []byte("{}"),
 		}); err != nil {
 			slog.Error("failed to save failure chat message",
 				"task_id", util.UUIDToString(task.ID),

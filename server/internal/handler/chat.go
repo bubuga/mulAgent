@@ -762,6 +762,8 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		ChatSessionID: session.ID,
 		Role:          "user",
 		Content:       req.Content,
+		MessageType:   pgtype.Text{String: "text", Valid: true},
+		Metadata:      []byte("{}"),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create chat message")

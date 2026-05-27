@@ -12,9 +12,9 @@ import (
 )
 
 const createChatMessage = `-- name: CreateChatMessage :one
-INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms
+INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms, agent_id, message_type, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'text'), COALESCE($9, '{}'::jsonb))
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata
 `
 
 type CreateChatMessageParams struct {
@@ -24,6 +24,9 @@ type CreateChatMessageParams struct {
 	TaskID        pgtype.UUID `json:"task_id"`
 	FailureReason pgtype.Text `json:"failure_reason"`
 	ElapsedMs     pgtype.Int8 `json:"elapsed_ms"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	MessageType   pgtype.Text `json:"message_type"`
+	Metadata      []byte      `json:"metadata"`
 }
 
 func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessageParams) (ChatMessage, error) {
@@ -34,6 +37,9 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 		arg.TaskID,
 		arg.FailureReason,
 		arg.ElapsedMs,
+		arg.AgentID,
+		arg.MessageType,
+		arg.Metadata,
 	)
 	var i ChatMessage
 	err := row.Scan(
@@ -45,6 +51,9 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 		&i.CreatedAt,
 		&i.FailureReason,
 		&i.ElapsedMs,
+		&i.AgentID,
+		&i.MessageType,
+		&i.Metadata,
 	)
 	return i, err
 }
