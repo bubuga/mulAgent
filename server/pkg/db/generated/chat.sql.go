@@ -848,7 +848,7 @@ func (q *Queries) ClearChatSessionUserArchived(ctx context.Context, arg ClearCha
 
 const listChatSessionsForIMV2 = `-- name: ListChatSessionsForIMV2 :many
 SELECT
-  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
   (cs.unread_since IS NOT NULL)::bool AS has_unread,
   us.pinned_at,
   us.archived_at,
@@ -881,23 +881,26 @@ type ListChatSessionsForIMV2Params struct {
 }
 
 type ListChatSessionsForIMV2Row struct {
-	ID                 pgtype.UUID        `json:"id"`
-	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
-	AgentID            pgtype.UUID        `json:"agent_id"`
-	CreatorID          pgtype.UUID        `json:"creator_id"`
-	Title              string             `json:"title"`
-	SessionID          pgtype.Text        `json:"session_id"`
-	WorkDir            pgtype.Text        `json:"work_dir"`
-	Status             string             `json:"status"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince        pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID          pgtype.UUID        `json:"runtime_id"`
-	HasUnread          bool               `json:"has_unread"`
-	PinnedAt           pgtype.Timestamptz `json:"pinned_at"`
-	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
-	LastMessagePreview pgtype.Text        `json:"last_message_preview"`
-	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	Title               string             `json:"title"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Kind                string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	TitleSource         string             `json:"title_source"`
+	HasUnread           bool               `json:"has_unread"`
+	PinnedAt            pgtype.Timestamptz `json:"pinned_at"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+	LastMessagePreview  pgtype.Text        `json:"last_message_preview"`
+	LastMessageAt       pgtype.Timestamptz `json:"last_message_at"`
 }
 
 func (q *Queries) ListChatSessionsForIMV2(ctx context.Context, arg ListChatSessionsForIMV2Params) ([]ListChatSessionsForIMV2Row, error) {
@@ -922,6 +925,9 @@ func (q *Queries) ListChatSessionsForIMV2(ctx context.Context, arg ListChatSessi
 			&i.UpdatedAt,
 			&i.UnreadSince,
 			&i.RuntimeID,
+			&i.Kind,
+			&i.OrchestratorAgentID,
+			&i.TitleSource,
 			&i.HasUnread,
 			&i.PinnedAt,
 			&i.ArchivedAt,

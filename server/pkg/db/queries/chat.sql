@@ -205,7 +205,7 @@ WHERE chat_session_id = $1 AND user_id = $2;
 -- name: ListChatSessionsForIMV2 :many
 -- IM session list with user_state join for pin/archive and last message preview.
 SELECT
-  cs.*,
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
   (cs.unread_since IS NOT NULL)::bool AS has_unread,
   us.pinned_at,
   us.archived_at,

@@ -351,9 +351,9 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 			}
 			sid := uuidToString(s.ID)
 			parts := participantsBySession[sid]
-			kind := "direct"
-			if len(parts) > 1 {
-				kind = "group"
+			kind := s.Kind
+			if kind == "" {
+				kind = "direct"
 			}
 			// Fallback: if no participant rows exist for a direct/legacy session,
 			// construct a synthetic participant from chat_session.agent_id.
@@ -378,6 +378,10 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				Kind:        kind,
 				IsPinned:    s.PinnedAt.Valid,
 				Participants: parts,
+			}
+			if s.OrchestratorAgentID.Valid {
+				orchID := uuidToString(s.OrchestratorAgentID)
+				item.OrchestratorAgentID = &orchID
 			}
 			if s.ArchivedAt.Valid {
 				ts := timestampToString(s.ArchivedAt)
