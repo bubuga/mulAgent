@@ -49,6 +49,16 @@ All critical integration gaps identified during local inspection have been fixed
 
 **Ready for PR2/PR3 validation and PR4 execution.**
 
+### PR2/PR3 Final Verification Record
+
+- ✅ `pnpm typecheck` — 6 packages pass
+- ✅ `pnpm test` — 80 test files, 701 tests pass
+- ✅ `go test ./internal/handler/ -v -count=1` — chat handler tests pass
+- ⚠️ `go test ./...` — partial pass on Windows host. Failures in daemon/repocache/agent/redact due to Windows-specific issues (symlink permissions, path length, fake executables). Chat-related packages unaffected.
+- ✅ Browser API verification — all 18 PR2/PR3 test cases pass (see verification table above)
+
+**Implementation note:** v1 is a personal single-user product. The new archive/unarchive APIs (`POST /archive`, `POST /unarchive`) currently sync both `chat_session_user_state.archived_at` AND `chat_session.status` for consistency. When multi-user support is added in the future, new archive APIs should only write `user_state`, and `chat_session.status` should be reserved for legacy Desktop compatibility only.
+
 ---
 
 ## Browser Console Fetch Verification Standard
@@ -118,6 +128,7 @@ Every API verification should record:
 | 2 | API Schema & Session List | Chat zod schemas with `parseWithFallback`, `view=im` endpoint, React Query session list |
 | 3 | Pin/Archive/Read State | `chat_session_user_state`, backfill, legacy archive transition sync, pin/archive APIs |
 | 4 | Direct Participant Model | `chat_session_agents` table, direct-chat backfill, participant reads, dual-write on create |
+| 4.5 | Direct Chat Thread Rendering | Replace right-panel placeholder, render selected direct-chat messages, send input, pending/cancel, mark read |
 | 5 | Group Chat & Message Model | Group creation wizard, Orchestrator validation, message fields, mention routing |
 | 6 | Plan CLI & Step State | `chat_execution_plan`, `chat_execution_step`, structured Orchestrator plan APIs/CLI |
 | 7 | Step Confirmation & Serial Lock | Step confirmation cards, edit/continue/skip, one running step per chat |
@@ -644,7 +655,6 @@ Expected:
 
 ```sql
 CREATE TABLE chat_session_agents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   chat_session_id UUID NOT NULL REFERENCES chat_session(id) ON DELETE CASCADE,
   agent_id UUID NOT NULL REFERENCES agent(id) ON DELETE RESTRICT,
   role TEXT NOT NULL DEFAULT 'participant',
@@ -653,6 +663,7 @@ CREATE TABLE chat_session_agents (
   work_dir TEXT,
   joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   removed_at TIMESTAMPTZ,
+  PRIMARY KEY (chat_session_id, agent_id),
   CHECK (role IN ('participant', 'orchestrator'))
 );
 
@@ -723,7 +734,7 @@ make test
 ### PR4 Engineering Boundaries
 
 - [ ] PR4 is a foundation PR and must be deployed before any handler path depends on `chat_session_agents`.
-- [ ] `chat_session_agents.id` is the row identity. Do not use `(chat_session_id, agent_id)` as primary key because removed/re-added participants need a future-safe path.
+- [ ] PR4 keeps `(chat_session_id, agent_id)` as the primary key for v1 because there is no member lifecycle UI yet. If future participant remove/re-add history is required, add a row-level `id UUID` in a later dedicated migration.
 - [ ] Only one active participant row per `chat_session_id + agent_id` is allowed.
 - [ ] Only one active Orchestrator per chat is allowed by partial unique index, even though direct chats have no Orchestrator yet.
 - [ ] Direct-chat backfill must be idempotent.
@@ -769,6 +780,313 @@ Expected:
 - The new session has `kind: "direct"`.
 - `participants` has one item.
 - The participant `agent_id` equals `{{agentId}}`.
+
+---
+
+## PR 4.5: Direct Chat Thread Rendering
+
+**Goal:** Make the Web chat-first page actually usable for existing direct chats before adding group chat.
+
+**Why this PR exists:** PR4 made `chat_session_agents` reliable, but the right panel still shows `Thread rendering coming in PR 4`. PR4.5 is a narrow UI bridge: selected direct conversations should display history, accept a message, show the running task state, and mark unread conversations as read. It must not introduce group orchestration yet.
+
+**Files:**
+- Modify: `packages/views/chat/components/chat-main-area.tsx`
+- Modify: `packages/views/chat/components/chat-input.tsx`
+- Create: `packages/views/chat/components/direct-chat-thread.tsx`
+- Test: `packages/views/chat/components/direct-chat-thread.test.tsx`
+- Optional helper if duplication becomes noisy: `packages/views/chat/lib/direct-chat-send.ts`
+
+### PR4.5 Engineering Boundaries
+
+- [ ] Only direct-chat thread rendering is in scope. Group creation, group headers, mention routing, and Orchestrator dispatch remain PR5.
+- [ ] Do not re-enable Web `ChatWindow` or `ChatFab`. Desktop keeps using the existing floating chat window.
+- [ ] Reuse `ChatMessageList`, `ChatMessageSkeleton`, `ChatInput`, and `TaskStatusPill` behavior instead of creating a second message renderer.
+- [ ] The selected session already exists. PR4.5 must not lazy-create sessions from the right panel.
+- [ ] Message send uses existing `api.sendChatMessage(sessionId, content, attachmentIds)`.
+- [ ] Use React Query cache keys from `@multica/core/chat/queries`. Do not put fetched messages into Zustand.
+- [ ] `ChatShell` may keep `activeSessionId` as local state for this PR. A URL-driven selected-session state can be a later UX improvement.
+- [ ] `ChatInput` currently derives draft storage from the global chat Zustand store. PR4.5 must add optional draft/editor key overrides or explicitly sync the selected Web session into the store. Prefer key overrides because it keeps Web main chat independent from Desktop floating chat behavior.
+- [ ] If the selected session is archived, render messages read-only and disable `ChatInput`.
+- [ ] If the selected session is not `direct`, render a small unsupported-state message until PR5 lands.
+- [ ] Mark read on open only when the selected IM session has `has_unread === true`.
+- [ ] Send/cancel must invalidate `chatKeys.messages(sessionId)`, `chatKeys.pendingTask(sessionId)`, and `chatKeys.imSessions(wsId)` where appropriate.
+- [ ] Keep attachment upload disabled in PR4.5 unless you deliberately wire `useFileUpload` with `chatSessionId`. Plain text send is enough for acceptance.
+- [ ] Do not change backend schema or API in PR4.5.
+
+### Task 1: Add optional draft keys to `ChatInput`
+
+- [ ] Modify `packages/views/chat/components/chat-input.tsx`.
+
+Add two optional props:
+
+```tsx
+interface ChatInputProps {
+  onSend: (content: string, attachmentIds?: string[]) => void;
+  onUploadFile?: (file: File) => Promise<UploadResult | null>;
+  onStop?: () => void;
+  isRunning?: boolean;
+  disabled?: boolean;
+  noAgent?: boolean;
+  agentName?: string;
+  leftAdornment?: ReactNode;
+  rightAdornment?: ReactNode;
+  topSlot?: ReactNode;
+  draftKeyOverride?: string;
+  editorKeyOverride?: string;
+}
+```
+
+Then keep the current ChatWindow behavior as the default path:
+
+```tsx
+const fallbackDraftKey =
+  activeSessionId ?? `${DRAFT_NEW_SESSION}:${selectedAgentId ?? ""}`;
+const draftKey = draftKeyOverride ?? fallbackDraftKey;
+const editorKey = editorKeyOverride ?? selectedAgentId ?? "no-agent";
+```
+
+Expected:
+- Existing `ChatWindow` does not need to pass either prop.
+- Web main chat can pass `draftKeyOverride={sessionId}` so drafts are scoped to the selected IM conversation, not the old floating-window store state.
+
+### Task 2: Add a direct-thread component
+
+- [ ] Create `packages/views/chat/components/direct-chat-thread.tsx`.
+
+Use this shape. Keep the component small; it should compose existing chat primitives and own only selected-session behavior.
+
+```tsx
+"use client";
+
+import { useCallback, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
+import {
+  chatIMSessionsOptions,
+  chatKeys,
+  chatMessagesOptions,
+  pendingChatTaskOptions,
+} from "@multica/core/chat/queries";
+import { useMarkChatSessionRead } from "@multica/core/chat/mutations";
+import { useAgentPresenceDetail } from "@multica/core/agents";
+import type { ChatMessage, ChatPendingTask } from "@multica/core/types";
+import { ChatInput } from "./chat-input";
+import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
+
+interface DirectChatThreadProps {
+  sessionId: string;
+}
+
+export function DirectChatThread({ sessionId }: DirectChatThreadProps) {
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  const markRead = useMarkChatSessionRead();
+
+  const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
+  const session = sessions.find((item) => item.id === sessionId);
+  const directAgent = session?.participants?.[0];
+  const agentId = directAgent?.agent_id ?? session?.agent_id;
+  const isArchived = session?.status === "archived" || !!session?.archived_at;
+
+  const { data: rawMessages, isLoading } = useQuery(chatMessagesOptions(sessionId));
+  const messages = rawMessages ?? [];
+  const { data: pendingTask } = useQuery(pendingChatTaskOptions(sessionId));
+  const pendingTaskId = pendingTask?.task_id ?? null;
+
+  const presence = useAgentPresenceDetail(wsId, agentId);
+  const availability = presence === "loading" ? undefined : presence.availability;
+
+  useEffect(() => {
+    if (!session?.has_unread) return;
+    markRead.mutate(sessionId);
+  }, [markRead, session?.has_unread, sessionId]);
+
+  const handleSend = useCallback(
+    async (content: string, attachmentIds?: string[]) => {
+      const sentAt = new Date().toISOString();
+      const optimistic: ChatMessage = {
+        id: `optimistic-${Date.now()}`,
+        chat_session_id: sessionId,
+        role: "user",
+        content,
+        task_id: null,
+        created_at: sentAt,
+      };
+
+      qc.setQueryData<ChatMessage[]>(
+        chatKeys.messages(sessionId),
+        (old) => (old ? [...old, optimistic] : [optimistic]),
+      );
+      qc.setQueryData<ChatPendingTask>(chatKeys.pendingTask(sessionId), {
+        task_id: `optimistic-${optimistic.id}`,
+        status: "queued",
+        created_at: sentAt,
+      });
+
+      const result = await api.sendChatMessage(sessionId, content, attachmentIds);
+      qc.setQueryData<ChatPendingTask>(chatKeys.pendingTask(sessionId), {
+        task_id: result.task_id,
+        status: "queued",
+        created_at: result.created_at,
+      });
+      qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+      qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
+    },
+    [qc, sessionId, wsId],
+  );
+
+  const handleStop = useCallback(() => {
+    if (!pendingTaskId) return;
+    qc.setQueryData(chatKeys.pendingTask(sessionId), {});
+    qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+    api.cancelTaskById(pendingTaskId).finally(() => {
+      qc.invalidateQueries({ queryKey: chatKeys.pendingTask(sessionId) });
+    });
+  }, [pendingTaskId, qc, sessionId]);
+
+  if (isLoading) return <ChatMessageSkeleton />;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ChatMessageList
+        messages={messages}
+        pendingTask={pendingTask}
+        availability={availability}
+      />
+      <ChatInput
+        onSend={handleSend}
+        onStop={handleStop}
+        isRunning={!!pendingTaskId}
+        disabled={isArchived}
+        agentName={directAgent?.name}
+        draftKeyOverride={sessionId}
+        editorKeyOverride={agentId ?? sessionId}
+      />
+    </div>
+  );
+}
+```
+
+- [ ] If TypeScript reports `ChatPendingTask` cannot accept `{}` in `handleStop`, use `null` and update the call site consistently with `pendingChatTaskOptions`' return type.
+
+### Task 3: Replace the placeholder in `ChatMainArea`
+
+- [ ] Modify `packages/views/chat/components/chat-main-area.tsx`.
+
+Expected behavior:
+- No selected session keeps the existing `Select a conversation` empty state.
+- Direct selected session renders `DirectChatThread`.
+- Group selected session renders a temporary unsupported state until PR5.
+
+Use this structure:
+
+```tsx
+"use client";
+
+import { MessageSquarePlus, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { chatIMSessionsOptions } from "@multica/core/chat/queries";
+import { DirectChatThread } from "./direct-chat-thread";
+
+interface ChatMainAreaProps {
+  sessionId?: string;
+}
+
+export function ChatMainArea({ sessionId }: ChatMainAreaProps) {
+  const wsId = useWorkspaceId();
+  const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
+  const session = sessionId ? sessions.find((item) => item.id === sessionId) : null;
+
+  if (!sessionId) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/40">
+            <MessageSquarePlus className="h-5 w-5" />
+          </div>
+          <p className="text-sm">Select a conversation</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (session?.kind === "group") {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/40">
+            <Users className="h-5 w-5" />
+          </div>
+          <p className="text-sm">Group chat rendering comes in PR5</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <DirectChatThread sessionId={sessionId} />;
+}
+```
+
+### Task 4: Add focused component tests
+
+- [ ] Add `packages/views/chat/components/direct-chat-thread.test.tsx`.
+- [ ] Mock `ContentEditor` through `ChatInput` if the editor makes the test heavy. The test only needs to prove PR4.5 wiring, not Tiptap behavior.
+
+Test cases:
+- `ChatInput` uses `draftKeyOverride` when provided and keeps the existing fallback behavior when it is not provided.
+- selected direct session fetches and renders existing messages.
+- sending text calls `api.sendChatMessage(sessionId, content)` and optimistically shows the user message.
+- session with `has_unread: true` calls `useMarkChatSessionRead().mutate(sessionId)`.
+- archived selected session disables the input.
+
+Suggested test command:
+
+```bash
+pnpm --filter @multica/views test -- chat
+```
+
+Expected:
+- New direct-thread tests pass.
+- Existing `chat-input` and `context-anchor` tests still pass.
+
+### Task 5: Manual browser validation
+
+Run the app with the existing Docker compose environment, open `http://localhost:3000/lpc/chat`, then validate:
+
+- [ ] Select an existing direct session. The right panel no longer shows `Thread rendering coming in PR 4`.
+- [ ] Existing messages load in the right panel.
+- [ ] Type an unsent draft in session A, switch to session B, then switch back to session A. The draft is still scoped to session A.
+- [ ] Send a plain text message. A user bubble appears immediately.
+- [ ] While the agent is running, the pending task pill appears and the input shows stop state.
+- [ ] When the assistant reply completes, the message list refreshes and the left session preview/recent activity updates.
+- [ ] Select an archived session from the archived list if available. Messages render read-only and the input is disabled.
+- [ ] Refresh the page with a selected session active. It is acceptable in PR4.5 if selection resets because URL-selected sessions are not required yet.
+- [ ] Other pages such as `/lpc/issues` still do not show Web floating chat.
+
+### Task 6: Verification and commit
+
+Run:
+
+```bash
+pnpm typecheck
+pnpm test
+cd server
+go test ./internal/handler/ -v -count=1
+```
+
+Expected:
+- TypeScript passes.
+- Vitest suite passes.
+- Go chat handler tests still pass; PR4.5 should not need backend changes.
+
+Commit:
+
+```bash
+git add packages/views/chat/components/chat-input.tsx packages/views/chat/components/chat-main-area.tsx packages/views/chat/components/direct-chat-thread.tsx packages/views/chat/components/direct-chat-thread.test.tsx docs/superpowers/plans/2026-05-26-chat-redesign.md
+git commit -m "feat(PR4.5): render direct chat thread in web shell"
+```
 
 ---
 

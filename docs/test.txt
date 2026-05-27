@@ -1,0 +1,341 @@
+(base) PS E:\project\multica\server> go test ./... -count=1
+go: downloading github.com/prometheus/client_golang v1.23.2
+go: downloading github.com/spf13/cobra v1.10.2
+go: downloading github.com/pelletier/go-toml/v2 v2.3.0
+go: downloading github.com/mattn/go-shellwords v1.0.13
+go: downloading github.com/go-chi/cors v1.2.2
+go: downloading github.com/beorn7/perks v1.0.1
+go: downloading github.com/prometheus/client_model v0.6.2
+go: downloading github.com/prometheus/common v0.66.1
+go: downloading google.golang.org/protobuf v1.36.8
+go: downloading golang.org/x/sys v0.35.0
+go: downloading github.com/inconshreveable/mousetrap v1.1.0
+go: downloading github.com/spf13/pflag v1.0.9
+go: downloading github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+go: downloading go.yaml.in/yaml/v2 v2.4.2
+?       github.com/multica-ai/multica/server/cmd/backfill_task_usage_daily      [no test files]
+?       github.com/multica-ai/multica/server/cmd/backfill_task_usage_dashboard_daily    [no test files]
+?       github.com/multica-ai/multica/server/cmd/migrate        [no test files]
+ok      github.com/multica-ai/multica/server/cmd/multica        1.269s
+ok      github.com/multica-ai/multica/server/cmd/server 12.050s
+ok      github.com/multica-ai/multica/server/internal/agenttmpl 0.685s
+ok      github.com/multica-ai/multica/server/internal/analytics 10.774s
+ok      github.com/multica-ai/multica/server/internal/auth      0.562s
+ok      github.com/multica-ai/multica/server/internal/cli       0.335s
+2026/05/27 10:41:49 INFO auto-update: deferring — task or claim in flight at barrier check
+2026/05/27 10:41:49 INFO auto-update: newer release available, upgrading current=v0.1.13 target=v0.1.14
+2026/05/27 10:41:49 INFO auto-update: upgrade completed, restarting target=v0.1.14 output=upgraded
+2026/05/27 10:41:49 INFO scheduling daemon restart new_binary=C:\Users\test\AppData\Local\Temp\go-build1230239159\b482\daemon.test.exe
+2026/05/27 10:41:49 INFO auto-update: newer release available, upgrading current=v0.1.13 target=v0.1.14
+2026/05/27 10:41:49 WARN auto-update: upgrade failed — will retry error="brew upgrade failed" output="brew network error"
+2026/05/27 10:41:49 WARN auto-update: fetch latest release failed — will retry error="network down"
+2026/05/27 10:41:49 INFO auto-update: newer release available, upgrading current=v0.1.13 target=v0.1.14
+2026/05/27 10:41:49 INFO auto-update: upgrade completed, restarting target=v0.1.14 output=upgraded
+2026/05/27 10:41:49 INFO scheduling daemon restart new_binary=C:\Users\test\AppData\Local\Temp\go-build1230239159\b482\daemon.test.exe
+2026/05/27 10:41:49 INFO auto-update: newer release available, upgrading current=v0.1.13 target=v0.1.14
+2026/05/27 10:41:49 WARN auto-update: upgrade failed — will retry error="brew upgrade failed" output="brew: network error"
+2026/05/27 10:41:49 INFO auto-update: disabled
+2026/05/27 10:41:49 INFO auto-update: skipped (managed by Desktop)
+2026/05/27 10:41:49 INFO auto-update: skipped (not a release build) version=v0.1.13-235-gabcdef0
+--- FAIL: TestEnsureDaemonID_Persists (0.00s)
+    identity_test.go:29: daemon.id not written: open C:\Users\test\AppData\Local\Temp\TestEnsureDaemonID_Persists1704468089\001\.multica\daemon.id: The system cannot find the path specified.
+--- FAIL: TestEnsureDaemonID_PromotesPreChangeProfileFile (0.01s)
+    identity_test.go:90: expected promoted UUID 019e674f-493f-7607-b3a6-cc4e80a88a77, got 019e4887-7803-727f-b315-0a9e3bf49ab8
+--- FAIL: TestEnsureDaemonID_RegeneratesCorruptFile (0.00s)
+    identity_test.go:126: file not rewritten with new UUID
+--- FAIL: TestLegacyDaemonUUIDs_ScansProfileDirs (0.01s)
+    identity_test.go:163: LegacyDaemonUUIDs = [], want [019e674f-4949-7ce4-9c46-1be28af72947 019e674f-4949-7ce5-832e-1049ed82a5f9]
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=2 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 INFO runtime async report succeeded after retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=3
+2026/05/27 10:41:49 ERROR runtime async report rejected — not retrying kind=local_skill_list runtime_id=rt-1 request_id=req-1 status=404 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 404: {\"error\":\"request not found\"}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_import runtime_id=rt-1 request_id=req-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/local-skills/import/req-1/result returned 502: {}"
+2026/05/27 10:41:49 INFO runtime async report succeeded after retry kind=local_skill_import runtime_id=rt-1 request_id=req-1 attempt=2
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=2 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=3 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=4 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 ERROR runtime async report exhausted retries kind=local_skill_list runtime_id=rt-1 request_id=req-1 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 WARN runtime async report failed — will retry kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/local-skills/req-1/result returned 500: {}"
+2026/05/27 10:41:49 ERROR runtime async report cancelled kind=local_skill_list runtime_id=rt-1 request_id=req-1 attempt=1 error="context canceled"
+--- FAIL: TestListRuntimeLocalSkills_Claude (0.01s)
+    local_skills_test.go:48: expected 1 skill, got 0
+--- FAIL: TestListRuntimeLocalSkills_Kiro (0.00s)
+    local_skills_test.go:89: expected 1 skill, got 0
+--- FAIL: TestListRuntimeLocalSkills_FollowsSymlinkedSkillDirs (0.01s)
+    local_skills_test.go:124: symlink: symlink C:\Users\test\AppData\Local\Temp\TestListRuntimeLocalSkills_FollowsSymlinkedSkillDirs2572330629\001\.agents\skills\lark-doc C:\Users\test\AppData\Local\Temp\TestListRuntimeLocalSkills_FollowsSymlinkedSkillDirs2572330629\001\.claude\skills\lark-doc: A required privilege is not held by the client.
+--- FAIL: TestListRuntimeLocalSkills_CodexUsesSharedCODEXHOME (0.01s)
+    local_skills_test.go:189: source_path = "~/AppData/Local/Temp/TestListRuntimeLocalSkills_CodexUsesSharedCODEXHOME3956083520/002/skills/debugger"
+--- FAIL: TestListRuntimeLocalSkills_DescendsIntoNestedSkillDirs (0.01s)
+    local_skills_test.go:238: keys = [], want [release/reporter top]
+--- FAIL: TestLoadRuntimeLocalSkillBundle_OpenCode (0.01s)
+    local_skills_test.go:254: loadRuntimeLocalSkillBundle: local skill not found
+--- FAIL: TestListRuntimeLocalSkills_OpenClaw (0.00s)
+    local_skills_test.go:295: expected 1 skill, got 0
+--- FAIL: TestLoadRuntimeLocalSkillBundle_Cursor (0.01s)
+    local_skills_test.go:315: loadRuntimeLocalSkillBundle: local skill not found
+2026/05/27 10:41:50 WARN runtime async report failed — will retry kind=model_list runtime_id=rt-1 request_id=req-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/models/req-1/result returned 500: {}"
+2026/05/27 10:41:50 WARN runtime async report failed — will retry kind=model_list runtime_id=rt-1 request_id=req-1 attempt=2 error="POST /api/daemon/runtimes/rt-1/models/req-1/result returned 500: {}"
+2026/05/27 10:41:50 INFO runtime async report succeeded after retry kind=model_list runtime_id=rt-1 request_id=req-1 attempt=3
+2026/05/27 10:41:50 ERROR runtime async report rejected — not retrying kind=model_list runtime_id=rt-1 request_id=req-1 status=404 error="POST /api/daemon/runtimes/rt-1/models/req-1/result returned 404: {\"error\":\"request not found\"}"
+--- FAIL: TestHandleRuntimeGone_DistinctDeletionsWithinCoalesceWindowBothRecover (0.01s)
+    runtime_gone_test.go:529: after second distinct deletion: register called 1 times, want 2 (coalesce window must clear on success)
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=2 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 INFO CLI update report succeeded after retry runtime_id=rt-1 update_id=upd-1 attempt=3
+2026/05/27 10:41:52 ERROR CLI update report rejected — not retrying runtime_id=rt-1 update_id=upd-1 status=404 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 404: {\"error\":\"update not found\"}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=2 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=3 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=4 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 ERROR CLI update report exhausted retries runtime_id=rt-1 update_id=upd-1 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 WARN CLI update report failed — will retry runtime_id=rt-1 update_id=upd-1 attempt=1 error="POST /api/daemon/runtimes/rt-1/update/upd-1/result returned 500: {}"
+2026/05/27 10:41:52 ERROR CLI update report cancelled runtime_id=rt-1 update_id=upd-1 attempt=1 error="context canceled"
+2026/05/27 10:41:52 INFO tool #1: Bash
+2026/05/27 10:41:52 INFO tool_result observed seq=2 tool=Bash call_id=c1
+2026/05/27 10:41:52 INFO tool #1: Bash
+2026/05/27 10:41:52 INFO gc: eligible for cleanup dir=hard-deleted-chat kind=chat chat_session=ffffffff-ffff-ffff-ffff-ffffffffff02 reason="session not accessible (hard-deleted)"
+2026/05/27 10:41:52 WARN idle watchdog firing: no agent activity, force-stopping run task=t-tail-i idle_for=0s threshold=50ms
+2026/05/27 10:41:52 INFO task gone server-side, interrupting agent error="GET /api/daemon/tasks/task-deleted/status returned 404: {\"error\":\"task not found\"}"
+2026/05/27 10:41:52 INFO task cancelled by server, interrupting agent
+2026/05/27 10:41:52 INFO gc: eligible for artifact cleanup dir=open-task kind=issue issue=88888888-8888-8888-8888-888888888888 status=in_progress completed_at=2026-05-26T10:41:52+08:00
+2026/05/27 10:41:52 INFO gc: eligible for cleanup dir=only-task kind=issue issue=77777777-7777-7777-7777-777777777777 status=done updated_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:52 INFO gc: removed dir=C:\Users\test\AppData\Local\Temp\TestGcWorkspace_CleansEmptyWorkspaceDir1402582995\001\ws-empty\only-task
+2026/05/27 10:41:52 WARN idle watchdog firing: no agent activity, force-stopping run task=t-idle-z idle_for=0s threshold=50ms
+2026/05/27 10:41:52 WARN idle watchdog firing: no agent activity, force-stopping run task=t-idle idle_for=0s threshold=50ms
+2026/05/27 10:41:52 INFO gc: removed dir=C:\Users\test\AppData\Local\Temp\TestCleanTaskDir_RemovesDirectory4189343285\001\ws1\doomed
+2026/05/27 10:41:52 INFO task did not complete, reporting failure status=blocked failure_reason=iteration_limit
+2026/05/27 10:41:52 INFO task completed status=completed
+2026/05/27 10:41:52 INFO task did not complete, reporting failure status=blocked failure_reason=agent_error
+2026/05/27 10:41:52 INFO task did not complete, reporting failure status=cancelled failure_reason=cancelled
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyReportsSyncFailure1505758647\001\missing-repo path=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyReportsSyncFailure1505758647\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRepoReadyReportsSyncFailure1505758647\001\missing-repo.git
+2026/05/27 10:41:52 INFO task did not complete, reporting failure status=weird_new_status failure_reason=agent_error
+2026/05/27 10:41:52 INFO gc: orphan directory dir=C:\Users\test\AppData\Local\Temp\TestShouldCleanTaskDir_Issue404OldOrphan2828670127\001\ws1\task8 reason="issue not accessible" age=0s
+2026/05/27 10:41:52 INFO gc: eligible for cleanup dir=task1 kind=issue issue=11111111-1111-1111-1111-111111111111 status=done updated_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:52 INFO gc: eligible for cleanup dir=task2 kind=issue issue=22222222-2222-2222-2222-222222222222 status=cancelled updated_at=2026-05-21T10:41:52+08:00
+2026/05/27 10:41:52 INFO tool_result observed seq=2 tool=Bash call_id=call-1
+2026/05/27 10:41:52 INFO gc: artifact removed path=C:\Users\test\AppData\Local\Temp\TestCleanTaskArtifacts_RemovesOnlyMatchedDirs1406232089\002\workdir\repo\.next bytes=13
+2026/05/27 10:41:52 INFO gc: artifact removed path=C:\Users\test\AppData\Local\Temp\TestCleanTaskArtifacts_RemovesOnlyMatchedDirs1406232089\002\workdir\repo\.turbo bytes=5
+2026/05/27 10:41:52 INFO gc: artifact removed path=C:\Users\test\AppData\Local\Temp\TestCleanTaskArtifacts_RemovesOnlyMatchedDirs1406232089\002\workdir\repo\node_modules bytes=19
+2026/05/27 10:41:52 INFO gc: orphan directory dir=C:\Users\test\AppData\Local\Temp\TestShouldCleanTaskDir_NoMetaOldOrphan585009415\001\ws1\task6 reason="no meta" age=0s
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyCachedRepoStillRefreshesSettings3211708827\001 path=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyCachedRepoStillRefreshesSettings3211708827\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRepoReadyCachedRepoStillRefreshesSettings3211708827\001.git
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyConcurrentMissRefreshesOnce2696996303\001 path=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyConcurrentMissRefreshesOnce2696996303\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRepoReadyConcurrentMissRefreshesOnce2696996303\001.git
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestRegisterTaskReposAllowsProjectOnlyURL2047184975\001 path=C:\Users\test\AppData\Local\Temp\TestRegisterTaskReposAllowsProjectOnlyURL2047184975\002\ws-1\c+\Users\test\AppData\Local\Temp\TestRegisterTaskReposAllowsProjectOnlyURL2047184975\001.git
+2026/05/27 10:41:53 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestRegisterTaskReposSurvivesWorkspaceRefresh2202174252\001 path=C:\Users\test\AppData\Local\Temp\TestRegisterTaskReposSurvivesWorkspaceRefresh2202174252\002\ws-1\c+\Users\test\AppData\Local\Temp\TestRegisterTaskReposSurvivesWorkspaceRefresh2202174252\001.git
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="legacy meta with no kind defaults to issue path — done over TTL = clean" kind=issue issue=eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01 status=done updated_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:53 ERROR repo cache: clone failed url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyReportsSyncFailure1505758647\001\missing-repo error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\001\\missing-repo.git'...\nfatal: 'C:\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\001\\missing-repo' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.: exit status 128"
+2026/05/27 10:41:53 WARN repo cache sync failed workspace_id=ws-1 error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\001\\missing-repo.git'...\nfatal: 'C:\\Users\\test\\AppData\\Local\\Temp\\TestEnsureRepoReadyReportsSyncFailure1505758647\\001\\missing-repo' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.: exit status 128"
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="quick_create cancelled — clean" kind=quick_create task=dddddddd-dddd-dddd-dddd-dddddddddd01 status=cancelled
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="quick_create completed task — clean immediately" kind=quick_create task=dddddddd-dddd-dddd-dddd-dddddddddd01 status=completed
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="autopilot issue_created counts as terminal" kind=autopilot_run autopilot_run=cccccccc-cccc-cccc-cccc-cccccccccc01 status=issue_created completed_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="chat 404 — hard-deleted, clean immediately (no mtime gate)" kind=chat chat_session=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb01 reason="session not accessible (hard-deleted)"
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="autopilot completed over TTL — clean" kind=autopilot_run autopilot_run=cccccccc-cccc-cccc-cccc-cccccccccc01 status=completed completed_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:53 INFO gc: eligible for cleanup dir="chat archived over TTL — clean" kind=chat chat_session=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb01 status=archived updated_at=2026-05-17T10:41:52+08:00
+2026/05/27 10:41:53 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyRefreshesOnMiss3497233240\001 path=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyRefreshesOnMiss3497233240\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRepoReadyRefreshesOnMiss3497233240\001.git
+2026/05/27 10:41:54 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyTrimsURL1002029589\001 path=C:\Users\test\AppData\Local\Temp\TestEnsureRepoReadyTrimsURL1002029589\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRepoReadyTrimsURL1002029589\001.git
+FAIL
+FAIL    github.com/multica-ai/multica/server/internal/daemon    9.538s
+2026/05/27 10:41:50 INFO execenv: codex auth.json is regular file path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexHomeSeedsFromShared2478639137\002\codex-home\auth.json size=18 mtime=2026-05-27T02:41:50.201Z
+2026/05/27 10:41:50 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexHomeStripsSkillsConfigEntries2786241580\002\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexHomeStripsSkillsConfigEntries2786241580\\002\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:50 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexHomeSkipsMissingFiles1399922793\002\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexHomeSkipsMissingFiles1399922793\\002\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:50 INFO execenv: codex auth.json is regular file path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexHome_RefreshesStaleAuthCopyOnReuse3223923573\002\codex-home\auth.json size=22 mtime=2026-05-27T02:41:50.919Z
+2026/05/27 10:41:51 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexHomeEnsuresNetworkAccess4169574908\002\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexHomeEnsuresNetworkAccess4169574908\\002\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:51 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexHome3331418526\002\ws-codex-reuse\e5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseRestoresCodexHome3331418526\\002\\ws-codex-reuse\\e5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:51 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexHome3331418526\002\ws-codex-reuse\e5f6a7b8 repos_available=0
+2026/05/27 10:41:51 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexHome3331418526\002\ws-codex-reuse\e5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseRestoresCodexHome3331418526\\002\\ws-codex-reuse\\e5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:51 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexHome3331418526\002\ws-codex-reuse\e5f6a7b8\workdir
+2026/05/27 10:41:51 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexPluginCache385707199\002\ws-codex-plugin-reuse\a5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseRestoresCodexPluginCache385707199\\002\\ws-codex-plugin-reuse\\a5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:51 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexPluginCache385707199\002\ws-codex-plugin-reuse\a5f6a7b8 repos_available=0
+2026/05/27 10:41:51 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexPluginCache385707199\002\ws-codex-plugin-reuse\a5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseRestoresCodexPluginCache385707199\\002\\ws-codex-plugin-reuse\\a5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:51 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseRestoresCodexPluginCache385707199\002\ws-codex-plugin-reuse\a5f6a7b8\workdir
+2026/05/27 10:41:52 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseWritesMissingCodexWorkspaceSkills2508005964\002\ws-codex-skill-reuse\b5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseWritesMissingCodexWorkspaceSkills2508005964\\002\\ws-codex-skill-reuse\\b5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:52 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseWritesMissingCodexWorkspaceSkills2508005964\002\ws-codex-skill-reuse\b5f6a7b8 repos_available=0
+2026/05/27 10:41:52 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseWritesMissingCodexWorkspaceSkills2508005964\002\ws-codex-skill-reuse\b5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseWritesMissingCodexWorkspaceSkills2508005964\\002\\ws-codex-skill-reuse\\b5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:52 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseWritesMissingCodexWorkspaceSkills2508005964\002\ws-codex-skill-reuse\b5f6a7b8\workdir
+2026/05/27 10:41:52 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseUpdatesCodexWorkspaceSkills888094354\002\ws-codex-skill-update\c5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseUpdatesCodexWorkspaceSkills888094354\\002\\ws-codex-skill-update\\c5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:53 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseUpdatesCodexWorkspaceSkills888094354\002\ws-codex-skill-update\c5f6a7b8 repos_available=0
+2026/05/27 10:41:53 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseUpdatesCodexWorkspaceSkills888094354\002\ws-codex-skill-update\c5f6a7b8\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseUpdatesCodexWorkspaceSkills888094354\\002\\ws-codex-skill-update\\c5f6a7b8\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:53 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseUpdatesCodexWorkspaceSkills888094354\002\ws-codex-skill-update\c5f6a7b8\workdir
+2026/05/27 10:41:53 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexSeedsUserSkills2653682207\002\ws-user-skills\d6f7a8b9\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexSeedsUserSkills2653682207\\002\\ws-user-skills\\d6f7a8b9\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:54 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestPrepareCodexSeedsUserSkills2653682207\002\ws-user-skills\d6f7a8b9 repos_available=0
+2026/05/27 10:41:54 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexWorkspaceSkillBeatsUserSkillOnConflict3792421836\002\ws-skill-conflict\e7f8a9b0\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexWorkspaceSkillBeatsUserSkillOnConflict3792421836\\002\\ws-skill-conflict\\e7f8a9b0\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:54 INFO execenv: codex user-skill yields to workspace skill name=writing
+2026/05/27 10:41:54 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestPrepareCodexWorkspaceSkillBeatsUserSkillOnConflict3792421836\002\ws-skill-conflict\e7f8a9b0 repos_available=0
+2026/05/27 10:41:55 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestPrepareCodexNoUserSkillsDir1096692669\002\ws-no-user-skills\f8a9b0c1\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestPrepareCodexNoUserSkillsDir1096692669\\002\\ws-no-user-skills\\f8a9b0c1\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:55 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestPrepareCodexNoUserSkillsDir1096692669\002\ws-no-user-skills\f8a9b0c1 repos_available=0
+2026/05/27 10:41:55 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseSeedsUserSkillUpdates3509575277\002\ws-user-skill-reuse\b0c1d2e3\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseSeedsUserSkillUpdates3509575277\\002\\ws-user-skill-reuse\\b0c1d2e3\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:56 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseSeedsUserSkillUpdates3509575277\002\ws-user-skill-reuse\b0c1d2e3 repos_available=0
+2026/05/27 10:41:56 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseSeedsUserSkillUpdates3509575277\002\ws-user-skill-reuse\b0c1d2e3\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseSeedsUserSkillUpdates3509575277\\002\\ws-user-skill-reuse\\b0c1d2e3\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:56 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseSeedsUserSkillUpdates3509575277\002\ws-user-skill-reuse\b0c1d2e3\workdir
+2026/05/27 10:41:56 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\002\ws-reuse-conflict\c1d2e3f4\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\\002\\ws-reuse-conflict\\c1d2e3f4\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:56 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\002\ws-reuse-conflict\c1d2e3f4 repos_available=0
+2026/05/27 10:41:56 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\002\ws-reuse-conflict\c1d2e3f4\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\\002\\ws-reuse-conflict\\c1d2e3f4\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:56 INFO execenv: codex user-skill yields to workspace skill name=writing
+2026/05/27 10:41:56 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseClearsUserSkillResidueOnWorkspaceConflict678862611\002\ws-reuse-conflict\c1d2e3f4\workdir
+2026/05/27 10:41:57 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseClearsRemovedUserSkill2753447133\002\ws-reuse-remove\d2e3f4a5\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseClearsRemovedUserSkill2753447133\\002\\ws-reuse-remove\\d2e3f4a5\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:57 INFO execenv: prepared env root=C:\Users\test\AppData\Local\Temp\TestReuseClearsRemovedUserSkill2753447133\002\ws-reuse-remove\d2e3f4a5 repos_available=0
+2026/05/27 10:41:57 INFO execenv: codex auth.json absent path=C:\Users\test\AppData\Local\Temp\TestReuseClearsRemovedUserSkill2753447133\002\ws-reuse-remove\d2e3f4a5\codex-home\auth.json error="GetFileAttributesEx C:\\Users\\test\\AppData\\Local\\Temp\\TestReuseClearsRemovedUserSkill2753447133\\002\\ws-reuse-remove\\d2e3f4a5\\codex-home\\auth.json: The system cannot find the file specified."
+2026/05/27 10:41:57 INFO execenv: reusing env workdir=C:\Users\test\AppData\Local\Temp\TestReuseClearsRemovedUserSkill2753447133\002\ws-reuse-remove\d2e3f4a5\workdir
+--- FAIL: TestPrepareOpenclawConfigExpandsTilde (0.01s)
+panic: interface conversion: interface {} is nil, not []interface {} [recovered, repanicked]
+
+goroutine 231 [running]:
+testing.tRunner.func1.2({0x7ff6e3c7d6c0, 0x3f27ac3f0480})
+        E:/Program Files/Go/src/testing/testing.go:1974 +0x239
+testing.tRunner.func1()
+        E:/Program Files/Go/src/testing/testing.go:1977 +0x349
+panic({0x7ff6e3c7d6c0?, 0x3f27ac3f0480?})
+        E:/Program Files/Go/src/runtime/panic.go:860 +0x13a
+github.com/multica-ai/multica/server/internal/daemon/execenv.TestPrepareOpenclawConfigExpandsTilde(0x3f27ac2c0e00)
+        E:/project/multica/server/internal/daemon/execenv/openclaw_config_test.go:339 +0x674
+testing.tRunner(0x3f27ac2c0e00, 0x7ff6e3cd2da8)
+        E:/Program Files/Go/src/testing/testing.go:2036 +0xc3
+created by testing.(*T).Run in goroutine 1
+        E:/Program Files/Go/src/testing/testing.go:2101 +0x4a9
+FAIL    github.com/multica-ai/multica/server/internal/daemon/execenv    9.799s
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\001 path=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchScansForCustomDefault2458758560\001 path=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchScansForCustomDefault2458758560\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchScansForCustomDefault2458758560\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreePathCollisionDoesNotLeakBranch371349040\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreePathCollisionDoesNotLeakBranch371349040\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreePathCollisionDoesNotLeakBranch371349040\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestSyncAndLookup4229589370\001 path=C:\Users\test\AppData\Local\Temp\TestSyncAndLookup4229589370\002\ws-123\c+\Users\test\AppData\Local\Temp\TestSyncAndLookup4229589370\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\001 path=C:\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchFallsBackToBareHead451811164\001 path=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchFallsBackToBareHead451811164\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchFallsBackToBareHead451811164\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestEnsureRemoteTrackingLayoutMigratesLegacyCache3145440291\001 path=C:\Users\test\AppData\Local\Temp\TestEnsureRemoteTrackingLayoutMigratesLegacyCache3145440291\002\ws-1\c+\Users\test\AppData\Local\Temp\TestEnsureRemoteTrackingLayoutMigratesLegacyCache3145440291\001.git
+2026/05/27 10:41:48 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchAmbiguousOriginReturnsEmpty752825383\001 path=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchAmbiguousOriginReturnsEmpty752825383\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchAmbiguousOriginReturnsEmpty752825383\001.git
+2026/05/27 10:41:49 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestGitFetchRefreshesOriginHeadAfterDefaultChange3000315982\001 path=C:\Users\test\AppData\Local\Temp\TestGitFetchRefreshesOriginHeadAfterDefaultChange3000315982\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGitFetchRefreshesOriginHeadAfterDefaultChange3000315982\001.git
+2026/05/27 10:41:49 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001.git
+2026/05/27 10:41:49 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\001.git
+2026/05/27 10:41:49 ERROR repo cache: clone failed url=C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\001 error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\\001.git'...\nfatal: failed to unlink 'C:\\Users\\test\\AppData\\Local\\Temp\\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\\001.git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904': Filename too long: exit status 128"
+--- FAIL: TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault (1.54s)
+    cache_test.go:1084: sync failed: git clone --bare: Cloning into bare repository 'C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\001.git'...
+        fatal: failed to unlink 'C:\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\002\ws-1\c+\Users\test\AppData\Local\Temp\TestGetRemoteDefaultBranchUsesBareHeadHintForCustomDefault1285956913\001.git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904': Filename too long: exit status 128
+2026/05/27 10:41:49 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\001.git
+2026/05/27 10:41:50 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\001.git
+2026/05/27 10:41:50 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestWorktreeFromCache1551647569\001 path=C:\Users\test\AppData\Local\Temp\TestWorktreeFromCache1551647569\002\ws-1\c+\Users\test\AppData\Local\Temp\TestWorktreeFromCache1551647569\001.git
+2026/05/27 10:41:51 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo\bar-baz path=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo\bar-baz.git
+2026/05/27 10:41:51 ERROR repo cache: clone failed url=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo\bar-baz error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\001\\foo\\bar-baz.git'...\nfatal: failed to unlink 'C:\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\001\\foo\\bar-baz.git/objects/12/ed70cbd523efd5f5209b9d6fb20bc9fd7fbb4c': Filename too long: exit status 128"
+2026/05/27 10:41:51 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo-bar\baz path=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo-bar\baz.git
+--- FAIL: TestGetRemoteDefaultBranchFallsBackToBareHead (3.88s)
+    cache_test.go:997: wipe refs/remotes: exec: "sh": executable file not found in %PATH%
+2026/05/27 10:41:52 ERROR repo cache: clone failed url=C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo-bar\baz error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\001\\foo-bar\\baz.git'...\nfatal: failed to unlink 'C:\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\\001\\foo-bar\\baz.git/objects/22/3b7836fb19fdf64ba2d3cd6173c6a283141f78': Filename too long: exit status 128"
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\001 path=C:\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\002\ws-1\c+\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\001.git
+2026/05/27 10:41:52 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithUnknownRequestedRef1984302104\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithUnknownRequestedRef1984302104\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeWithUnknownRequestedRef1984302104\001.git
+--- FAIL: TestSyncKeepsDistinctCachesForSegmentBoundaryColliders (4.46s)
+    cache_test.go:313: Sync failed: git clone --bare: Cloning into bare repository 'C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo\bar-baz.git'...
+        fatal: failed to unlink 'C:\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncKeepsDistinctCachesForSegmentBoundaryColliders3707534547\001\foo\bar-baz.git/objects/12/ed70cbd523efd5f5209b9d6fb20bc9fd7fbb4c': Filename too long: exit status 128
+--- FAIL: TestEnsureRemoteTrackingLayoutMigratesLegacyCache (4.48s)
+    cache_test.go:858: wipe refs/remotes: exec: "sh": executable file not found in %PATH%
+2026/05/27 10:41:52 INFO repo cache: fetching url=C:\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\001 path=C:\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\002\ws-1\c+\Users\test\AppData\Local\Temp\TestSyncFetchesExisting2749715930\001.git
+2026/05/27 10:41:53 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\001.git
+2026/05/27 10:41:53 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\001 path=C:\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\001.git
+2026/05/27 10:41:54 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\001.git
+2026/05/27 10:41:55 INFO repo cache: cloning url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\001.git
+2026/05/27 10:41:56 ERROR repo cache: clone failed url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\001 error="git clone --bare: Cloning into bare repository 'C:\\Users\\test\\AppData\\Local\\Temp\\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\\001.git'...\nfatal: failed to unlink 'C:\\Users\\test\\AppData\\Local\\Temp\\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\\002\\ws-1\\c+\\Users\\test\\AppData\\Local\\Temp\\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\\001.git/objects/22/4f087e912cdaea220f7d8eb662e29ab0aca139': Filename too long: exit status 128"
+--- FAIL: TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled (2.03s)
+    cache_test.go:1223: sync failed: git clone --bare: Cloning into bare repository 'C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\001.git'...
+        fatal: failed to unlink 'C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\002\ws-1\c+\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesCoAuthoredByHookWhenDisabled2280316619\001.git/objects/22/4f087e912cdaea220f7d8eb662e29ab0aca139': Filename too long: exit status 128
+2026/05/27 10:41:56 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\003\Users\test\AppData\Local\Temp\TestCreateWorktreeExcludesOpenCodeSkills2827645554\001 branch=agent/opencode/opencode base=refs/remotes/origin/master
+2026/05/27 10:41:56 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\003\Users\test\AppData\Local\Temp\TestCreateWorktree3998430764\001 branch=agent/code-reviewer/a1b2c3d4 base=refs/remotes/origin/master
+2026/05/27 10:41:56 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\003\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001 branch=agent/agent/t1111111 base=refs/remotes/origin/master
+2026/05/27 10:41:57 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\003\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedTagRef814220627\001 branch=agent/reviewer/tagtaski base=refs/tags/v1
+2026/05/27 10:41:57 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\003\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedBranchRef664047561\001 branch=agent/reviewer/reviewta base=refs/remotes/origin/review-branch
+2026/05/27 10:41:57 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\003\Users\test\AppData\Local\Temp\TestCreateWorktreeWithRequestedCommitRef653961511\001 branch=agent/reviewer/committa base=5b7462b8afa0fce4de39bd77a00bcbb62e08a59f
+2026/05/27 10:41:58 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\001 path=C:\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\003\Users\test\AppData\Local\Temp\TestRemoveCoAuthoredByHookPreservesUserHook3040339983\001 branch=agent/test-agent/33333333 base=refs/remotes/origin/master
+2026/05/27 10:41:58 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\001 path=C:\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\003\Users\test\AppData\Local\Temp\TestCoAuthoredByHookIdempotent3892114868\001 branch=agent/test-agent/b2c3d4e5 base=refs/remotes/origin/master
+2026/05/27 10:41:58 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\003\Users\test\AppData\Local\Temp\TestCreateWorktreeRemovesLegacyCoAuthoredByHook3435042580\001 branch=agent/test-agent/44444444 base=refs/remotes/origin/master
+2026/05/27 10:41:58 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\003\Users\test\AppData\Local\Temp\TestCreateWorktreeInstallsCoAuthoredByHook3988384820\001 branch=agent/test-agent/a1b2c3d4 base=refs/remotes/origin/master
+2026/05/27 10:41:59 INFO repo checkout: worktree created url=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001 path=C:\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\004\Users\test\AppData\Local\Temp\TestCreateWorktreeFetchesDespiteAgentBranchOnRemote1488956248\001 branch=agent/agent/t2222222 base=refs/remotes/origin/master
+FAIL
+FAIL    github.com/multica-ai/multica/server/internal/daemon/repocache  12.211s
+ok      github.com/multica-ai/multica/server/internal/daemonws  1.102s
+ok      github.com/multica-ai/multica/server/internal/events    0.418s
+ok      github.com/multica-ai/multica/server/internal/handler   22.283s
+?       github.com/multica-ai/multica/server/internal/issueguard        [no test files]
+?       github.com/multica-ai/multica/server/internal/logger    [no test files]
+ok      github.com/multica-ai/multica/server/internal/mention   0.361s
+ok      github.com/multica-ai/multica/server/internal/metrics   1.534s
+ok      github.com/multica-ai/multica/server/internal/middleware        0.714s
+?       github.com/multica-ai/multica/server/internal/migrations        [no test files]
+ok      github.com/multica-ai/multica/server/internal/realtime  2.051s
+ok      github.com/multica-ai/multica/server/internal/service   1.022s
+ok      github.com/multica-ai/multica/server/internal/storage   3.588s
+ok      github.com/multica-ai/multica/server/internal/util      0.376s
+2026/05/27 10:41:50 WARN custom_args: blocked protocol-critical flag, skipping flag=--output-format
+2026/05/27 10:41:50 WARN custom_args: blocked protocol-critical flag, skipping flag=--permission-mode
+2026/05/27 10:41:50 WARN custom_args: blocked protocol-critical flag, skipping flag=--listen
+2026/05/27 10:41:50 WARN custom_args: blocked protocol-critical flag, skipping flag=--listen
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=-o
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--effort
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--yolo
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--output-format
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--resume
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--acp
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--yolo
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--output-format
+2026/05/27 10:41:52 WARN opencode error event error=RateLimitError
+2026/05/27 10:41:52 WARN opencode error event error="unknown opencode error"
+2026/05/27 10:41:52 WARN opencode error event error="Model not found: definitely/not-a-model."
+2026/05/27 10:41:52 WARN opencode error event error=RateLimitError
+2026/05/27 10:41:52 WARN openclaw error event error=AuthenticationError
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--model
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--system-prompt
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--session-id
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--message
+2026/05/27 10:41:52 WARN openclaw error event error="model gpt-99 not available"
+2026/05/27 10:41:52 WARN openclaw lifecycle failure phase=error error="agent crashed unexpectedly"
+2026/05/27 10:41:52 WARN openclaw lifecycle failure phase=cancelled error="unknown openclaw error"
+2026/05/27 10:41:52 WARN openclaw error event error="model not found: gpt-99"
+2026/05/27 10:41:52 WARN openclaw lifecycle failure phase=failed error="timeout exceeded"
+2026/05/27 10:41:52 WARN opencode stdout scanner error error="simulated I/O error"
+2026/05/27 10:41:52 WARN opencode error event error="Model not found: bad/model"
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-1 status=completed
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-1 status=completed
+2026/05/27 10:41:52 WARN codex thread/resume returned no thread ID; falling back to thread/start prior_thread_id=thr_prior
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id=thr_main turn_id=turn-main status=completed
+2026/05/27 10:41:52 WARN codex error notification message=reconnecting will_retry=true
+2026/05/27 10:41:52 WARN codex thread/resume failed; falling back to thread/start prior_thread_id=thr_stale error="thread/resume: unknown thread (code=-32602)"
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-f status=failed
+2026/05/27 10:41:52 WARN codex error notification message=boom will_retry=false
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-f status=failed
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-2 status=cancelled
+2026/05/27 10:41:52 WARN openclaw error event error="rate limit exceeded"
+2026/05/27 10:41:52 INFO codex turn/completed received thread_id="" turn_id=turn-1 status=completed
+2026/05/27 10:41:52 WARN codex: unhandled server request method=some/unknown/method id=13
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--output-format
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--output-format
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--permission-mode
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=-p
+2026/05/27 10:41:52 WARN custom_args: blocked protocol-critical flag, skipping flag=--mcp-config
+--- FAIL: TestOpencodeBackendDoesNotUsePermissionEnvOverride (0.68s)
+    opencode_test.go:983: execute: opencode executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendDoesNotUsePermissionEnvOverride1540730924\\001\\opencode": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendDoesNotUsePermissionEnvOverride1540730924\\001\\opencode": executable file not found in %PATH%
+--- FAIL: TestOpencodeBackendAnchorsDirAndPWD (0.69s)
+    opencode_test.go:913: execute: opencode executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendAnchorsDirAndPWD4238448759\\001\\opencode": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendAnchorsDirAndPWD4238448759\\001\\opencode": executable file not found in %PATH%
+--- FAIL: TestKiroBackendUsesSessionLoadForResume (0.65s)
+    kiro_test.go:249: execute: kiro executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendUsesSessionLoadForResume1449667557\\001\\kiro-cli": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendUsesSessionLoadForResume1449667557\\001\\kiro-cli": executable file not found in %PATH%
+--- FAIL: TestKimiBackendInvokesACPSubcommand (0.64s)
+    kimi_test.go:186: execute: kimi executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestKimiBackendInvokesACPSubcommand1770294975\\001\\kimi": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestKimiBackendInvokesACPSubcommand1770294975\\001\\kimi": executable file not found in %PATH%
+--- FAIL: TestKiroBackendInvokesACPWithTrustAllTools (0.65s)
+    kiro_test.go:190: execute: kiro executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendInvokesACPWithTrustAllTools2189580602\\001\\kiro-cli": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendInvokesACPWithTrustAllTools2189580602\\001\\kiro-cli": executable file not found in %PATH%
+--- FAIL: TestHermesBackendDoesNotPromoteOnTransientRetry (0.64s)
+    hermes_test.go:1238: execute: hermes executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestHermesBackendDoesNotPromoteOnTransientRetry2190780704\\001\\hermes": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestHermesBackendDoesNotPromoteOnTransientRetry2190780704\\001\\hermes": executable file not found in %PATH%
+--- FAIL: TestKimiBackendSetModelFailureFailsTask (0.64s)
+    kimi_test.go:121: execute: kimi executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestKimiBackendSetModelFailureFailsTask1442318925\\001\\kimi": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestKimiBackendSetModelFailureFailsTask1442318925\\001\\kimi": executable file not found in %PATH%
+--- FAIL: TestHermesBackendPromotesProviderErrorWithNonEmptyOutput (0.64s)
+    hermes_test.go:1156: execute: hermes executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestHermesBackendPromotesProviderErrorWithNonEmptyOutput3835283175\\001\\hermes": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestHermesBackendPromotesProviderErrorWithNonEmptyOutput3835283175\\001\\hermes": executable file not found in %PATH%
+--- FAIL: TestOpencodeBackendQuestionDenySurvivesUserConfig (0.64s)
+    opencode_test.go:1036: execute: opencode executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendQuestionDenySurvivesUserConfig426383558\\001\\opencode": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendQuestionDenySurvivesUserConfig426383558\\001\\opencode": executable file not found in %PATH%
+--- FAIL: TestKiroBackendSetModelFailureFailsTask (0.66s)
+    kiro_test.go:135: execute: kiro executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendSetModelFailureFailsTask1509417267\\001\\kiro-cli": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestKiroBackendSetModelFailureFailsTask1509417267\\001\\kiro-cli": executable file not found in %PATH%
+--- FAIL: TestOpencodeBackendBlocksDirOverride (0.65s)
+    opencode_test.go:1091: execute: opencode executable not found at "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendBlocksDirOverride1540467271\\001\\opencode": exec: "C:\\Users\\test\\AppData\\Local\\Temp\\TestOpencodeBackendBlocksDirOverride1540467271\\001\\opencode": executable file not found in %PATH%
+FAIL
+FAIL    github.com/multica-ai/multica/server/pkg/agent  5.404s
+?       github.com/multica-ai/multica/server/pkg/db/generated   [no test files]
+?       github.com/multica-ai/multica/server/pkg/protocol       [no test files]
+--- FAIL: TestRedactHomeDirectory (0.00s)
+    redact_test.go:108: expected **** in path, got: Reading file at C:\Users\test/Documents/secret.txt
+FAIL
+FAIL    github.com/multica-ai/multica/server/pkg/redact 2.390s
+FAIL
+(base) PS E:\project\multica\server>
