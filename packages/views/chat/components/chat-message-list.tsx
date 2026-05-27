@@ -16,7 +16,9 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@multica/ui/components/ui/tooltip";
-import { ChevronRight, ChevronDown, Brain, AlertCircle, AlertTriangle, Copy } from "lucide-react";
+import { ChevronRight, ChevronDown, Brain, AlertCircle, AlertTriangle, Copy, Crown } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
+import { Badge } from "@multica/ui/components/ui/badge";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import { useAutoScroll } from "@multica/ui/hooks/use-auto-scroll";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/queries";
@@ -43,12 +45,21 @@ interface ChatMessageListProps {
   pendingTask: ChatPendingTask | null | undefined;
   /** Resolved presence; pass `undefined` while loading to keep the pill copy neutral. */
   availability: AgentAvailability | undefined;
+  /** When "group", assistant messages show agent identity. */
+  sessionKind?: string;
+  /** Group participants for agent name/avatar lookup. */
+  participants?: import("@multica/core/types").ChatParticipant[];
+  /** Orchestrator agent ID for badge display. */
+  orchestratorAgentId?: string | null;
 }
 
 export function ChatMessageList({
   messages,
   pendingTask,
   availability,
+  sessionKind,
+  participants,
+  orchestratorAgentId,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fadeStyle = useScrollFade(scrollRef);
@@ -88,6 +99,9 @@ export function ChatMessageList({
             key={msg.id}
             message={msg}
             isPending={!!pendingTaskId && msg.task_id === pendingTaskId}
+            sessionKind={sessionKind}
+            participants={participants}
+            orchestratorAgentId={orchestratorAgentId}
           />
         ))}
         {hasLive && (
@@ -147,15 +161,34 @@ function toTimelineItem(m: TaskMessagePayload): ChatTimelineItem {
 
 // ─── Message bubbles ─────────────────────────────────────────────────────
 
-function MessageBubble({ message, isPending }: { message: ChatMessage; isPending: boolean }) {
+function MessageBubble({
+  message,
+  isPending,
+  sessionKind,
+  participants,
+  orchestratorAgentId,
+}: {
+  message: ChatMessage;
+  isPending: boolean;
+  sessionKind?: string;
+  participants?: import("@multica/core/types").ChatParticipant[];
+  orchestratorAgentId?: string | null;
+}) {
+  // System messages: centered, muted, no bubble.
+  if (message.role === "system") {
+    return (
+      <div className="flex justify-center">
+        <p className="text-xs text-muted-foreground italic px-4 py-1">
+          {message.content}
+        </p>
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="rounded-2xl bg-muted px-3.5 py-2 text-sm max-w-[80%] break-words">
-          {/* User messages are authored as markdown in ContentEditor, so
-           * render them through the same pipeline as assistant replies.
-           * Neutralise prose's leading/trailing margin so single-line
-           * bubbles stay as compact as the plain-text version used to. */}
           <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
             <Markdown attachments={message.attachments}>{message.content}</Markdown>
           </div>
@@ -169,15 +202,29 @@ function MessageBubble({ message, isPending }: { message: ChatMessage; isPending
     );
   }
 
-  return <AssistantMessage message={message} isPending={isPending} />;
+  return (
+    <AssistantMessage
+      message={message}
+      isPending={isPending}
+      sessionKind={sessionKind}
+      participants={participants}
+      orchestratorAgentId={orchestratorAgentId}
+    />
+  );
 }
 
 function AssistantMessage({
   message,
   isPending,
+  sessionKind,
+  participants,
+  orchestratorAgentId,
 }: {
   message: ChatMessage;
   isPending: boolean;
+  sessionKind?: string;
+  participants?: import("@multica/core/types").ChatParticipant[];
+  orchestratorAgentId?: string | null;
 }) {
   const taskId = message.task_id;
   const canFetchTaskMessages = isTaskMessageTaskId(taskId);
@@ -192,23 +239,37 @@ function AssistantMessage({
 
   const timeline: ChatTimelineItem[] = (taskMessages ?? []).map(toTimelineItem);
 
+  // Look up agent identity for group chats.
+  const agentParticipant = sessionKind === "group" && message.agent_id
+    ? participants?.find((p) => p.agent_id === message.agent_id)
+    : undefined;
+  const isOrchestrator = message.agent_id === orchestratorAgentId;
+
   // Failure bubble path: when the server's FailTask wrote a failure
   // chat_message (failure_reason set), render a destructive bubble with the
   // human-readable reason label + collapsible raw errMsg + the same timeline
   // so the user can see exactly where the run broke.
   if (message.failure_reason) {
     return (
-      <FailureBubble
-        reason={message.failure_reason}
-        rawError={message.content}
-        timeline={timeline}
-        elapsedMs={message.elapsed_ms}
-      />
+      <div className="w-full space-y-1">
+        {agentParticipant && (
+          <AgentIdentityLine participant={agentParticipant} isOrchestrator={isOrchestrator} />
+        )}
+        <FailureBubble
+          reason={message.failure_reason}
+          rawError={message.content}
+          timeline={timeline}
+          elapsedMs={message.elapsed_ms}
+        />
+      </div>
     );
   }
 
   return (
     <div className="w-full space-y-1.5">
+      {agentParticipant && (
+        <AgentIdentityLine participant={agentParticipant} isOrchestrator={isOrchestrator} />
+      )}
       {timeline.length > 0 ? (
         <TimelineView items={timeline} attachments={message.attachments} />
       ) : (
@@ -225,6 +286,34 @@ function AssistantMessage({
         timeline={timeline}
         isPending={isPending}
       />
+    </div>
+  );
+}
+
+function AgentIdentityLine({
+  participant,
+  isOrchestrator,
+}: {
+  participant: import("@multica/core/types").ChatParticipant;
+  isOrchestrator: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 mb-0.5">
+      <Avatar className="size-5">
+        <AvatarImage src={participant.avatar_url ?? undefined} />
+        <AvatarFallback className="text-[10px]">
+          {(participant.name || "A").charAt(0).toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
+      <span className="text-xs font-medium text-muted-foreground">
+        {participant.name || "Agent"}
+      </span>
+      {isOrchestrator && (
+        <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5">
+          <Crown className="size-2.5" />
+          Orchestrator
+        </Badge>
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
-import { MessageSquarePlus, Users } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { chatIMSessionsOptions } from "@multica/core/chat/queries";
 import { DirectChatThread } from "./direct-chat-thread";
+import { GroupChatThread } from "./group-chat-thread";
 
 interface ChatMainAreaProps {
   sessionId?: string;
@@ -29,16 +30,7 @@ export function ChatMainArea({ sessionId }: ChatMainAreaProps) {
   }
 
   if (session?.kind === "group") {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/40">
-            <Users className="h-5 w-5" />
-          </div>
-          <p className="text-sm">Group chat rendering comes in PR5</p>
-        </div>
-      </div>
-    );
+    return <GroupChatThread sessionId={sessionId} />;
   }
 
   return <DirectChatThread sessionId={sessionId} />;

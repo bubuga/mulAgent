@@ -19,6 +19,7 @@ export interface ChatSession {
   // IM view fields — populated when view=im.
   kind?: string;
   participants?: ChatParticipant[];
+  orchestrator_agent_id?: string | null;
   is_pinned?: boolean;
   archived_at?: string | null;
   last_message_preview?: string | null;
