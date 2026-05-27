@@ -76,7 +76,16 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.Queries.CreateChatSession(r.Context(), db.CreateChatSessionParams{
+	// Transactional dual-write: create session + participant atomically.
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	session, err := qtx.CreateChatSession(r.Context(), db.CreateChatSessionParams{
 		WorkspaceID: workspaceUUID,
 		AgentID:     agentID,
 		CreatorID:   parseUUID(userID),
@@ -84,6 +93,25 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create chat session")
+		return
+	}
+
+	// Dual-write: insert participant row for the direct chat agent.
+	_, err = qtx.AddChatSessionAgent(r.Context(), db.AddChatSessionAgentParams{
+		ChatSessionID: session.ID,
+		AgentID:       agentID,
+		Role:          "participant",
+		RuntimeID:     session.RuntimeID,
+		SessionID:     session.SessionID,
+		WorkDir:       session.WorkDir,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create chat participant")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit transaction")
 		return
 	}
 
@@ -163,6 +191,16 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 			kind := "direct"
 			if len(parts) > 1 {
 				kind = "group"
+			}
+			// Fallback: if no participant rows exist for a direct/legacy session,
+			// construct a synthetic participant from chat_session.agent_id.
+			// This handles pre-migration sessions and edge cases where backfill
+			// missed a row. Group sessions should not silently fallback.
+			if len(parts) == 0 && kind == "direct" {
+				parts = []ParticipantResponse{{
+					AgentID: uuidToString(s.AgentID),
+					Role:    "participant",
+				}}
 			}
 			item := ChatSessionResponse{
 				ID:          sid,

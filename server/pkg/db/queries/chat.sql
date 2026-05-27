@@ -228,6 +228,25 @@ ORDER BY
 UPDATE chat_session SET status = $2, updated_at = now()
 WHERE id = $1;
 
+-- name: AddChatSessionAgent :one
+INSERT INTO chat_session_agents (
+  chat_session_id,
+  agent_id,
+  role,
+  session_id,
+  runtime_id,
+  work_dir
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_session_id, agent_id)
+DO UPDATE SET
+  role = EXCLUDED.role,
+  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
+  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
+  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
+  removed_at = NULL
+RETURNING *;
+
 -- name: ListChatSessionParticipantsBySessionIDs :many
 SELECT csa.chat_session_id, csa.agent_id, csa.role, a.name AS agent_name, a.avatar_url
 FROM chat_session_agents csa

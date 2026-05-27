@@ -947,3 +947,66 @@ func (q *Queries) ListChatSessionParticipantsBySessionIDs(ctx context.Context, d
 	}
 	return items, nil
 }
+
+const addChatSessionAgent = `-- name: AddChatSessionAgent :one
+INSERT INTO chat_session_agents (
+  chat_session_id,
+  agent_id,
+  role,
+  session_id,
+  runtime_id,
+  work_dir
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_session_id, agent_id)
+DO UPDATE SET
+  role = EXCLUDED.role,
+  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
+  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
+  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
+  removed_at = NULL
+RETURNING chat_session_id, agent_id, role, session_id, runtime_id, work_dir, joined_at, removed_at
+`
+
+type AddChatSessionAgentParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	Role          string      `json:"role"`
+	SessionID     pgtype.Text `json:"session_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	WorkDir       pgtype.Text `json:"work_dir"`
+}
+
+type AddChatSessionAgentRow struct {
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	Role          string             `json:"role"`
+	SessionID     pgtype.Text        `json:"session_id"`
+	RuntimeID     pgtype.UUID        `json:"runtime_id"`
+	WorkDir       pgtype.Text        `json:"work_dir"`
+	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+	RemovedAt     pgtype.Timestamptz `json:"removed_at"`
+}
+
+func (q *Queries) AddChatSessionAgent(ctx context.Context, arg AddChatSessionAgentParams) (AddChatSessionAgentRow, error) {
+	row := q.db.QueryRow(ctx, addChatSessionAgent,
+		arg.ChatSessionID,
+		arg.AgentID,
+		arg.Role,
+		arg.SessionID,
+		arg.RuntimeID,
+		arg.WorkDir,
+	)
+	var i AddChatSessionAgentRow
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.AgentID,
+		&i.Role,
+		&i.SessionID,
+		&i.RuntimeID,
+		&i.WorkDir,
+		&i.JoinedAt,
+		&i.RemovedAt,
+	)
+	return i, err
+}
