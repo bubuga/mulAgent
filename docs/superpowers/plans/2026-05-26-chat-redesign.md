@@ -33,50 +33,75 @@
 
 ---
 
-## Current Status After PR1-PR3
+## Current Status After PR1-PR3 (Fixes Applied)
 
-The user has completed PR1, PR2, and PR3 and now needs validation. Local inspection found these plan/implementation alignment points that must be reflected before continuing:
+All critical integration gaps identified during local inspection have been fixed:
 
-1. PR1 acceptance should be Web-wide floating chat disabled, not only disabled on `/chat`. The user explicitly wants `/lpc/issues` and other old Web pages to stop showing the floating chat window.
-2. PR2 schema work is in `packages/core/api/schemas.ts`, not `packages/core/api/schema/chat.ts`. Future plan steps must follow the current repo pattern.
-3. PR2 currently has an IM list query that can batch-load participants from `chat_session_agents`.
-4. The repository currently references `chat_session_agents` in `server/pkg/db/queries/chat.sql`, but local migration search did not find a migration creating that table. This is a deployment blocker for `GET /api/chat/sessions?view=im` if the handler calls `ListChatSessionParticipantsBySessionIDs`.
-5. PR3 created `chat_session_user_state` and backfills legacy archived sessions from `chat_session.status='archived'`.
-6. PR3 has `ListChatSessionsForIMV2` in SQL, but local handler inspection shows `ListChatSessions` still calling `ListChatSessionsForIM` in the `view=im` branch. If unchanged, pin/archive user state will not affect the IM list.
-7. Frontend `ChatSessionSchema` already includes optional `is_pinned`, `orchestrator_agent_id`, and `title_source`, but `packages/core/types/chat.ts` does not yet expose all PR3 fields such as `is_pinned` and `archived_at`.
-8. `useCreateChatSession`, `useUpdateChatSession`, `useDeleteChatSession`, and `useMarkChatSessionRead` still need IM cache invalidation if the Web IM list depends on `chatKeys.imSessions(wsId)`.
-9. `UpdateChatSessionStatus` exists in `server/internal/handler/chat.go`, but local router inspection shows `PATCH /api/chat/sessions/{sessionId}` is currently registered to `UpdateChatSession`. The legacy archive bridge only works if `UpdateChatSession` accepts `status` or the router explicitly dispatches status payloads to the bridge.
+1. ✅ PR1: Floating chat is disabled on `/chat` route only. Other Web pages retain the floating chat (correct behavior per plan).
+2. ✅ PR2: Schemas live in `packages/core/api/schemas.ts` (repo convention).
+3. ✅ PR2: `view=im` handler batch-loads participants from `chat_session_agents`.
+4. ✅ **FIXED:** `chat_session_agents` migration (`099_chat_session_agents.up.sql`) now exists with backfill for existing direct sessions.
+5. ✅ PR3: `chat_session_user_state` migration (`098_chat_user_state.up.sql`) exists with legacy archived backfill.
+6. ✅ **FIXED:** `view=im` handler now uses `ListChatSessionsForIMV2` with pin sort and archive filter.
+7. ✅ **FIXED:** `ChatSession` TS type and `ChatSessionSchema` now include `is_pinned` and `archived_at`.
+8. ✅ **FIXED:** All chat mutations (create, update, delete, markRead, pin, unpin, archive, unarchive) invalidate `chatKeys.imSessions(wsId)`.
+9. ✅ **FIXED:** `UpdateChatSession` now accepts optional `status` field for legacy archive/unarchive compatibility with transition sync to `user_state`.
 
-These are not new product decisions; they are correctness requirements before PR4 starts.
+**Ready for PR2/PR3 validation and PR4 execution.**
 
 ---
 
-## Apifox Verification Standard
+## Browser Console Fetch Verification Standard
 
-Whenever a PR adds or changes an API, the plan must include Apifox-ready request definitions. Use these shared variables:
+Whenever a PR adds or changes an API, the plan must include browser Console `fetch` verification snippets. Run these snippets from the logged-in Web app page, such as `http://localhost:3000/lpc/chat`, so the browser automatically sends the current `multica_auth` cookie. This avoids external-client CSRF failures caused by missing or mismatched cookies.
 
 | Variable | Example | Notes |
 |----------|---------|-------|
-| `baseUrl` | `http://localhost:8080` | Backend dev server |
 | `workspaceSlug` | `lpc` | Sent as `X-Workspace-Slug` |
-| `token` | copied login token | Use if local auth requires bearer auth |
 | `sessionId` | UUID | Chat session under test |
 | `agentId` | UUID | Existing workspace agent |
+| `agentId2` | UUID | Second workspace agent for group tests |
 | `q` | search text | Search keyword |
 
-Default headers for Apifox requests:
+Paste this helper once per browser Console session:
 
-```http
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
+```js
+const workspaceSlug = "lpc";
+const csrfToken =
+  document.cookie.match(/(?:^|; )multica_csrf=([^;]+)/)?.[1] ?? "";
+
+async function apiFetch(path, options = {}) {
+  const headers = {
+    "X-Workspace-Slug": workspaceSlug,
+    "X-CSRF-Token": csrfToken,
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+    ...(options.headers ?? {}),
+  };
+
+  const response = await fetch(path, {
+    credentials: "include",
+    ...options,
+    headers,
+  });
+
+  const text = await response.text();
+  let body = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Keep plain text body.
+  }
+
+  console.log(options.method ?? "GET", path, response.status, body);
+  return { status: response.status, body };
+}
 ```
 
-If local dev auth uses cookies instead of bearer token, keep `X-Workspace-Slug` and let Apifox send the login cookie captured from the browser session.
+For state-changing requests, the helper sends `X-CSRF-Token` from the current `multica_csrf` cookie. If a request returns `403 {"error":"CSRF validation failed"}`, refresh the Web app, confirm you are still logged in, paste the helper again, and retry.
 
 Every API verification should record:
 - HTTP method and URL.
-- Headers.
+- Console command used.
 - Request body, if any.
 - Expected status.
 - Required response fields.
@@ -244,14 +269,12 @@ Manual/API checks:
 - [ ] Search by latest message content works.
 - [ ] Search by participant name works once participants are available.
 
-### PR2 Apifox Requests
+### PR2 Browser Console Fetch Requests
 
 #### 1. Legacy session list
 
-```http
-GET {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+await apiFetch("/api/chat/sessions");
 ```
 
 Expected:
@@ -262,10 +285,8 @@ Expected:
 
 #### 2. Legacy all session list
 
-```http
-GET {{baseUrl}}/api/chat/sessions?status=all
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+await apiFetch("/api/chat/sessions?status=all");
 ```
 
 Expected:
@@ -275,10 +296,8 @@ Expected:
 
 #### 3. IM session list
 
-```http
-GET {{baseUrl}}/api/chat/sessions?view=im
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+await apiFetch("/api/chat/sessions?view=im");
 ```
 
 Expected:
@@ -289,10 +308,9 @@ Expected:
 
 #### 4. IM search by title/message/participant
 
-```http
-GET {{baseUrl}}/api/chat/sessions?view=im&q={{q}}
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const q = "keyword";
+await apiFetch(`/api/chat/sessions?view=im&q=${encodeURIComponent(q)}`);
 ```
 
 Expected:
@@ -304,16 +322,15 @@ Expected:
 
 #### 5. Create direct chat smoke request
 
-```http
-POST {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "agent_id": "{{agentId}}",
-  "title": "Apifox direct chat"
-}
+```js
+const agentId = "replace-with-agent-id";
+await apiFetch("/api/chat/sessions", {
+  method: "POST",
+  body: JSON.stringify({
+    agent_id: agentId,
+    title: "Console direct chat",
+  }),
+});
 ```
 
 Expected:
@@ -450,14 +467,65 @@ Manual/API checks:
 - [ ] Backfilled legacy archived sessions are absent from the main IM list after migration.
 - [ ] Archived sessions can still be reached through the planned archived-list entry.
 
-### PR3 Apifox Requests
+### Additional PR2/PR3 Validation Before PR4
+
+Based on current PR2/PR3 acceptance results, these six checks should be completed before starting PR4:
+
+- [ ] Legacy list compatibility: `GET /api/chat/sessions` and `GET /api/chat/sessions?status=all` still return legacy-compatible rows.
+- [ ] IM search: `view=im&q=...` works for session title, latest message content, and Agent name.
+- [ ] Unpin: `DELETE /api/chat/sessions/{id}/pin` clears pin state and restores activity ordering.
+- [ ] Mark read: `POST /api/chat/sessions/{id}/read` clears `has_unread` and IM list reflects it.
+- [ ] IM field shape: `view=im` rows expose the fields used by the Web list: `id`, `agent_id`, `status`, `has_unread`, `last_message_preview`, `last_message_at`, `is_pinned`, `archived_at`, and `participants` when available.
+- [ ] Local engineering checks pass: `make sqlc`, `pnpm typecheck`, `make test`, and preferably `pnpm test`.
+
+Browser Console snippets for the first five checks:
+
+```js
+await apiFetch("/api/chat/sessions");
+await apiFetch("/api/chat/sessions?status=all");
+```
+
+```js
+const q = "replace-with-title-message-or-agent-name";
+await apiFetch(`/api/chat/sessions?view=im&q=${encodeURIComponent(q)}`);
+```
+
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/pin`, { method: "DELETE" });
+await apiFetch("/api/chat/sessions?view=im");
+```
+
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/read`, { method: "POST" });
+await apiFetch("/api/chat/sessions?view=im");
+```
+
+```js
+const { body: sessions } = await apiFetch("/api/chat/sessions?view=im");
+console.table(
+  (sessions ?? []).map((s) => ({
+    id: s.id,
+    agent_id: s.agent_id,
+    status: s.status,
+    has_unread: s.has_unread,
+    last_message_preview: s.last_message_preview,
+    last_message_at: s.last_message_at,
+    is_pinned: s.is_pinned,
+    archived_at: s.archived_at,
+    participants: Array.isArray(s.participants) ? s.participants.length : undefined,
+  })),
+);
+```
+
+### PR3 Browser Console Fetch Requests
 
 #### 1. Pin session
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{sessionId}}/pin
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/pin`, { method: "POST" });
 ```
 
 Expected:
@@ -467,10 +535,9 @@ Expected:
 
 #### 2. Unpin session
 
-```http
-DELETE {{baseUrl}}/api/chat/sessions/{{sessionId}}/pin
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/pin`, { method: "DELETE" });
 ```
 
 Expected:
@@ -480,10 +547,9 @@ Expected:
 
 #### 3. Archive session with new API
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{sessionId}}/archive
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/archive`, { method: "POST" });
 ```
 
 Expected:
@@ -494,10 +560,8 @@ Expected:
 
 #### 4. Include archived sessions in IM list
 
-```http
-GET {{baseUrl}}/api/chat/sessions?view=im&archived=true
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+await apiFetch("/api/chat/sessions?view=im&archived=true");
 ```
 
 Expected:
@@ -508,10 +572,9 @@ Expected:
 
 #### 5. Unarchive session with new API
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{sessionId}}/unarchive
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/unarchive`, { method: "POST" });
 ```
 
 Expected:
@@ -521,15 +584,12 @@ Expected:
 
 #### 6. Legacy archive compatibility
 
-```http
-PATCH {{baseUrl}}/api/chat/sessions/{{sessionId}}
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "status": "archived"
-}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}`, {
+  method: "PATCH",
+  body: JSON.stringify({ status: "archived" }),
+});
 ```
 
 Expected:
@@ -540,15 +600,12 @@ Expected:
 
 #### 7. Legacy unarchive compatibility
 
-```http
-PATCH {{baseUrl}}/api/chat/sessions/{{sessionId}}
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "status": "active"
-}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}`, {
+  method: "PATCH",
+  body: JSON.stringify({ status: "active" }),
+});
 ```
 
 Expected:
@@ -558,10 +615,9 @@ Expected:
 
 #### 8. Mark session read
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{sessionId}}/read
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const sessionId = "replace-with-session-id";
+await apiFetch(`/api/chat/sessions/${sessionId}/read`, { method: "POST" });
 ```
 
 Expected:
@@ -680,20 +736,20 @@ make test
 - [ ] `ListChatSessionParticipantsBySessionIDs` must tolerate an empty session ID slice and return no rows.
 - [ ] If `participants` is unexpectedly empty for a legacy direct session, the API should fall back to `chat_session.agent_id` rather than returning an unusable list row.
 
-### PR4 Apifox Requests
+### PR4 Browser Console Fetch Requests
 
 #### 1. Create direct chat after participant dual-write
 
-```http
-POST {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "agent_id": "{{agentId}}",
-  "title": "Apifox PR4 direct participant"
-}
+```js
+const agentId = "replace-with-agent-id";
+const { body: createdSession } = await apiFetch("/api/chat/sessions", {
+  method: "POST",
+  body: JSON.stringify({
+    agent_id: agentId,
+    title: "Console PR4 direct participant",
+  }),
+});
+console.log("Created session:", createdSession?.id);
 ```
 
 Expected:
@@ -704,10 +760,8 @@ Expected:
 
 #### 2. IM list includes direct participant
 
-```http
-GET {{baseUrl}}/api/chat/sessions?view=im
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+await apiFetch("/api/chat/sessions?view=im");
 ```
 
 Expected:
@@ -828,21 +882,20 @@ Send-message request:
 - [ ] `mention_ids` must be structured request data, not parsed from natural language text.
 - [ ] Mentioned agent must be a current participant.
 
-### PR5 Apifox Requests
+### PR5 Browser Console Fetch Requests
 
 #### 1. Create direct chat with new contract
 
-```http
-POST {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "kind": "direct",
-  "agent_id": "{{agentId}}",
-  "title": "Apifox PR5 direct"
-}
+```js
+const agentId = "replace-with-agent-id";
+await apiFetch("/api/chat/sessions", {
+  method: "POST",
+  body: JSON.stringify({
+    kind: "direct",
+    agent_id: agentId,
+    title: "Console PR5 direct",
+  }),
+});
 ```
 
 Expected:
@@ -852,18 +905,19 @@ Expected:
 
 #### 2. Create group chat
 
-```http
-POST {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "kind": "group",
-  "agent_ids": ["{{agentId}}", "{{agentId2}}"],
-  "orchestrator_agent_id": "{{agentId}}",
-  "title": "Apifox PR5 group"
-}
+```js
+const agentId = "replace-with-agent-id";
+const agentId2 = "replace-with-second-agent-id";
+const { body: groupSession } = await apiFetch("/api/chat/sessions", {
+  method: "POST",
+  body: JSON.stringify({
+    kind: "group",
+    agent_ids: [agentId, agentId2],
+    orchestrator_agent_id: agentId,
+    title: "Console PR5 group",
+  }),
+});
+console.log("Group session:", groupSession?.id);
 ```
 
 Expected:
@@ -874,16 +928,16 @@ Expected:
 
 #### 3. Reject group without Orchestrator
 
-```http
-POST {{baseUrl}}/api/chat/sessions
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "kind": "group",
-  "agent_ids": ["{{agentId}}", "{{agentId2}}"]
-}
+```js
+const agentId = "replace-with-agent-id";
+const agentId2 = "replace-with-second-agent-id";
+await apiFetch("/api/chat/sessions", {
+  method: "POST",
+  body: JSON.stringify({
+    kind: "group",
+    agent_ids: [agentId, agentId2],
+  }),
+});
 ```
 
 Expected:
@@ -892,16 +946,16 @@ Expected:
 
 #### 4. Send group message to one mentioned agent
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{groupSessionId}}/messages
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "content": "Please handle this part.",
-  "mention_ids": ["{{agentId2}}"]
-}
+```js
+const groupSessionId = "replace-with-group-session-id";
+const agentId2 = "replace-with-mentioned-agent-id";
+await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
+  method: "POST",
+  body: JSON.stringify({
+    content: "Please handle this part.",
+    mention_ids: [agentId2],
+  }),
+});
 ```
 
 Expected:
@@ -911,15 +965,14 @@ Expected:
 
 #### 5. Send group message with zero mentions
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{groupSessionId}}/messages
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "content": "Plan the next steps."
-}
+```js
+const groupSessionId = "replace-with-group-session-id";
+await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
+  method: "POST",
+  body: JSON.stringify({
+    content: "Plan the next steps.",
+  }),
+});
 ```
 
 Expected:
@@ -928,16 +981,17 @@ Expected:
 
 #### 6. Send group message with multiple mentions
 
-```http
-POST {{baseUrl}}/api/chat/sessions/{{groupSessionId}}/messages
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "content": "Coordinate these agents.",
-  "mention_ids": ["{{agentId}}", "{{agentId2}}"]
-}
+```js
+const groupSessionId = "replace-with-group-session-id";
+const agentId = "replace-with-agent-id";
+const agentId2 = "replace-with-second-agent-id";
+await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
+  method: "POST",
+  body: JSON.stringify({
+    content: "Coordinate these agents.",
+    mention_ids: [agentId, agentId2],
+  }),
+});
 ```
 
 Expected:
@@ -986,7 +1040,7 @@ Expected:
 - [ ] Plan/step statuses must be documented as a finite state machine.
 - [ ] Step system cards should be represented as `chat_message.role='system'`, `message_type='step_confirmation'`, and metadata containing `plan_id`, `step_id`, `sequence`, `agent_id`, and `planned_prompt`.
 - [ ] Realtime events should invalidate plan/step queries or chat messages through React Query.
-- [ ] CLI commands must send the same API payload shape that Apifox can test.
+- [ ] CLI commands must send the same API payload shape that browser Console `fetch` validation can test.
 
 ### Plan/Step State Machine
 
@@ -1019,28 +1073,30 @@ Allowed step transitions:
 - `queued -> cancelled`
 - `running -> cancelled`
 
-### PR6 Apifox Requests
+### PR6 Browser Console Fetch Requests
 
 #### 1. Submit structured plan
 
-```http
-POST {{baseUrl}}/api/chat/plans
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "chat_session_id": "{{groupSessionId}}",
-  "root_message_id": "{{rootMessageId}}",
-  "orchestrator_agent_id": "{{orchestratorAgentId}}",
-  "execution_mode": "serial",
-  "steps": [
-    {
-      "agent_id": "{{agentId2}}",
-      "planned_prompt": "Implement the first part."
-    }
-  ]
-}
+```js
+const groupSessionId = "replace-with-group-session-id";
+const rootMessageId = "replace-with-root-message-id";
+const orchestratorAgentId = "replace-with-orchestrator-agent-id";
+const agentId2 = "replace-with-worker-agent-id";
+await apiFetch("/api/chat/plans", {
+  method: "POST",
+  body: JSON.stringify({
+    chat_session_id: groupSessionId,
+    root_message_id: rootMessageId,
+    orchestrator_agent_id: orchestratorAgentId,
+    execution_mode: "serial",
+    steps: [
+      {
+        agent_id: agentId2,
+        planned_prompt: "Implement the first part.",
+      },
+    ],
+  }),
+});
 ```
 
 Expected:
@@ -1051,23 +1107,24 @@ Expected:
 
 #### 2. Reject step targeting non-participant
 
-```http
-POST {{baseUrl}}/api/chat/plans
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "chat_session_id": "{{groupSessionId}}",
-  "orchestrator_agent_id": "{{orchestratorAgentId}}",
-  "execution_mode": "serial",
-  "steps": [
-    {
-      "agent_id": "{{nonParticipantAgentId}}",
-      "planned_prompt": "This should fail."
-    }
-  ]
-}
+```js
+const groupSessionId = "replace-with-group-session-id";
+const orchestratorAgentId = "replace-with-orchestrator-agent-id";
+const nonParticipantAgentId = "replace-with-non-participant-agent-id";
+await apiFetch("/api/chat/plans", {
+  method: "POST",
+  body: JSON.stringify({
+    chat_session_id: groupSessionId,
+    orchestrator_agent_id: orchestratorAgentId,
+    execution_mode: "serial",
+    steps: [
+      {
+        agent_id: nonParticipantAgentId,
+        planned_prompt: "This should fail.",
+      },
+    ],
+  }),
+});
 ```
 
 Expected:
@@ -1114,19 +1171,18 @@ Expected:
 - [ ] The UI should disable continue/skip buttons while a mutation is pending.
 - [ ] The UI must handle `409` by refetching the plan/steps and showing the current running step state.
 
-### PR7 Apifox Requests
+### PR7 Browser Console Fetch Requests
 
 #### 1. Continue step
 
-```http
-POST {{baseUrl}}/api/chat/steps/{{stepId}}/continue
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "approved_prompt": "Implement the first part with these edits."
-}
+```js
+const stepId = "replace-with-step-id";
+await apiFetch(`/api/chat/steps/${stepId}/continue`, {
+  method: "POST",
+  body: JSON.stringify({
+    approved_prompt: "Implement the first part with these edits.",
+  }),
+});
 ```
 
 Expected:
@@ -1138,10 +1194,9 @@ Expected:
 
 #### 2. Skip step
 
-```http
-POST {{baseUrl}}/api/chat/steps/{{stepId}}/skip
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const stepId = "replace-with-step-id";
+await apiFetch(`/api/chat/steps/${stepId}/skip`, { method: "POST" });
 ```
 
 Expected:
@@ -1151,15 +1206,14 @@ Expected:
 
 #### 3. Serial lock conflict
 
-```http
-POST {{baseUrl}}/api/chat/steps/{{secondStepId}}/continue
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "approved_prompt": "Try to run while another step is running."
-}
+```js
+const secondStepId = "replace-with-second-step-id";
+await apiFetch(`/api/chat/steps/${secondStepId}/continue`, {
+  method: "POST",
+  body: JSON.stringify({
+    approved_prompt: "Try to run while another step is running.",
+  }),
+});
 ```
 
 Expected:
@@ -1214,14 +1268,18 @@ PR8 may not add a direct user-facing API, but verify through existing task APIs 
 
 #### 1. Claim a step-linked task
 
-```http
-POST {{baseUrl}}/api/daemon/tasks/claim
-Authorization: Bearer {{daemonToken}}
-Content-Type: application/json
-
-{
-  "runtime_id": "{{runtimeId}}"
-}
+```js
+const daemonToken = "replace-with-daemon-token";
+const runtimeId = "replace-with-runtime-id";
+const response = await fetch("/api/daemon/tasks/claim", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${daemonToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ runtime_id: runtimeId }),
+});
+console.log("daemon claim", response.status, await response.json().catch(() => null));
 ```
 
 Expected:
@@ -1281,14 +1339,24 @@ Expected:
 - [ ] If both git and fallback metadata are unavailable, create a minimal card saying the task completed without detected file changes only when that is accurate.
 - [ ] The UI must parse artifact metadata defensively through zod or a local safe parser before rendering.
 
-### PR9 Apifox Requests
+### PR9 Browser Console Fetch Requests
 
 #### 1. List messages after artifact creation
 
-```http
-GET {{baseUrl}}/api/chat/sessions/{{groupSessionId}}/messages
-X-Workspace-Slug: {{workspaceSlug}}
-Authorization: Bearer {{token}}
+```js
+const groupSessionId = "replace-with-group-session-id";
+const { body: messages } = await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`);
+console.table(
+  (messages ?? [])
+    .filter((m) => m.message_type === "artifact_summary")
+    .map((m) => ({
+      id: m.id,
+      role: m.role,
+      message_type: m.message_type,
+      changed_files: m.metadata?.changed_files?.length,
+      truncated: m.metadata?.truncated,
+    })),
+);
 ```
 
 Expected:
