@@ -411,7 +411,7 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 }
 
 const listChatMessages = `-- name: ListChatMessages :many
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata FROM chat_message
 WHERE chat_session_id = $1
 ORDER BY created_at ASC
 `
@@ -434,6 +434,9 @@ func (q *Queries) ListChatMessages(ctx context.Context, chatSessionID pgtype.UUI
 			&i.CreatedAt,
 			&i.FailureReason,
 			&i.ElapsedMs,
+			&i.AgentID,
+			&i.MessageType,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}

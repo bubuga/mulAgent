@@ -84,7 +84,7 @@ VALUES ($1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(ela
 RETURNING *;
 
 -- name: ListChatMessages :many
-SELECT * FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata FROM chat_message
 WHERE chat_session_id = $1
 ORDER BY created_at ASC;
 
