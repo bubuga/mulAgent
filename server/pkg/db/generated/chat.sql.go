@@ -87,6 +87,53 @@ func (q *Queries) CreateChatSession(ctx context.Context, arg CreateChatSessionPa
 	return i, err
 }
 
+const createChatSessionV2 = `-- name: CreateChatSessionV2 :one
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, kind, orchestrator_agent_id, title_source)
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $6, $7)
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, kind, orchestrator_agent_id, title_source
+`
+
+type CreateChatSessionV2Params struct {
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	AgentID            pgtype.UUID `json:"agent_id"`
+	CreatorID          pgtype.UUID `json:"creator_id"`
+	Title              string      `json:"title"`
+	Kind               string      `json:"kind"`
+	OrchestratorAgentID pgtype.UUID `json:"orchestrator_agent_id"`
+	TitleSource        string      `json:"title_source"`
+}
+
+func (q *Queries) CreateChatSessionV2(ctx context.Context, arg CreateChatSessionV2Params) (ChatSession, error) {
+	row := q.db.QueryRow(ctx, createChatSessionV2,
+		arg.WorkspaceID,
+		arg.AgentID,
+		arg.CreatorID,
+		arg.Title,
+		arg.Kind,
+		arg.OrchestratorAgentID,
+		arg.TitleSource,
+	)
+	var i ChatSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatorID,
+		&i.Title,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnreadSince,
+		&i.RuntimeID,
+		&i.Kind,
+		&i.OrchestratorAgentID,
+		&i.TitleSource,
+	)
+	return i, err
+}
+
 const createChatTask = `-- name: CreateChatTask :one
 INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id)
 VALUES ($1, $2, NULL, 'queued', $3, $4)

@@ -582,10 +582,9 @@ export const ChatMessageSchema = z.object({
   failure_reason: z.string().nullable().default(null),
   elapsed_ms: z.number().nullable().default(null),
   attachments: z.array(z.unknown()).default([]),
-  // New fields
   agent_id: z.string().nullable().optional(),
-  message_type: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  message_type: z.string().default("text"),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 }).loose();
 
 export const EMPTY_CHAT_MESSAGE: ChatMessage = {

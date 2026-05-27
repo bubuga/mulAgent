@@ -3,6 +3,12 @@ INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id)
 VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2))
 RETURNING *;
 
+-- name: CreateChatSessionV2 :one
+-- Extended create that supports kind and orchestrator_agent_id for group chats.
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, kind, orchestrator_agent_id, title_source)
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $6, $7)
+RETURNING *;
+
 -- name: GetChatSession :one
 SELECT * FROM chat_session
 WHERE id = $1;

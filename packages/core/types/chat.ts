@@ -38,10 +38,13 @@ export interface PendingChatTasksResponse {
 export interface ChatMessage {
   id: string;
   chat_session_id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   task_id: string | null;
   created_at: string;
+  agent_id?: string | null;
+  message_type?: string;
+  metadata?: Record<string, unknown>;
   /**
    * Attachments linked to this message via the attachment table's
    * chat_message_id FK. Populated by ListChatMessages. UI renders these

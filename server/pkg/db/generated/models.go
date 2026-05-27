@@ -175,21 +175,27 @@ type ChatMessage struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	FailureReason pgtype.Text        `json:"failure_reason"`
 	ElapsedMs     pgtype.Int8        `json:"elapsed_ms"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	MessageType   string             `json:"message_type"`
+	Metadata      []byte             `json:"metadata"`
 }
 
 type ChatSession struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	CreatorID   pgtype.UUID        `json:"creator_id"`
-	Title       string             `json:"title"`
-	SessionID   pgtype.Text        `json:"session_id"`
-	WorkDir     pgtype.Text        `json:"work_dir"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID   pgtype.UUID        `json:"runtime_id"`
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	CreatorID          pgtype.UUID        `json:"creator_id"`
+	Title              string             `json:"title"`
+	SessionID          pgtype.Text        `json:"session_id"`
+	WorkDir            pgtype.Text        `json:"work_dir"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince        pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	Kind               string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID       `json:"orchestrator_agent_id"`
+	TitleSource        string             `json:"title_source"`
 }
 
 type ChatSessionUserState struct {

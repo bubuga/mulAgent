@@ -25,8 +25,11 @@ const chatSessionTitleMaxLen = 200
 // ---------------------------------------------------------------------------
 
 type CreateChatSessionRequest struct {
-	AgentID string `json:"agent_id"`
-	Title   string `json:"title"`
+	Kind                string   `json:"kind"`                  // "direct" (default) or "group"
+	AgentID             string   `json:"agent_id"`              // for direct
+	AgentIDs            []string `json:"agent_ids"`             // for group
+	OrchestratorAgentID string   `json:"orchestrator_agent_id"` // for group
+	Title               string   `json:"title"`
 }
 
 func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
@@ -41,20 +44,38 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	kind := req.Kind
+	if kind == "" {
+		kind = "direct"
+	}
+	if kind != "direct" && kind != "group" {
+		writeError(w, http.StatusBadRequest, "kind must be 'direct' or 'group'")
+		return
+	}
+
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	if kind == "direct" {
+		h.createDirectChat(w, r, userID, workspaceUUID, req)
+	} else {
+		h.createGroupChat(w, r, userID, workspaceUUID, req)
+	}
+}
+
+func (h *Handler) createDirectChat(w http.ResponseWriter, r *http.Request, userID string, workspaceUUID pgtype.UUID, req CreateChatSessionRequest) {
 	if req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
+		writeError(w, http.StatusBadRequest, "agent_id is required for direct chat")
 		return
 	}
 	agentID, ok := parseUUIDOrBadRequest(w, req.AgentID, "agent_id")
 	if !ok {
 		return
 	}
-	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
-	if !ok {
-		return
-	}
 
-	// Verify agent exists in workspace.
 	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
 		ID:          agentID,
 		WorkspaceID: workspaceUUID,
@@ -67,16 +88,12 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "agent is archived")
 		return
 	}
-	// Private-agent gate: members must be in allowed_principals to start
-	// a chat with a private agent. Agent-to-agent chat sessions bypass
-	// the gate so A2A collaboration still works.
-	actorType, actorID := h.resolveActor(r, userID, workspaceID)
-	if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, workspaceID) {
+	actorType, actorID := h.resolveActor(r, userID, uuidToString(workspaceUUID))
+	if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, uuidToString(workspaceUUID)) {
 		writeError(w, http.StatusForbidden, "you do not have access to this agent")
 		return
 	}
 
-	// Transactional dual-write: create session + participant atomically.
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to start transaction")
@@ -96,7 +113,6 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Dual-write: insert participant row for the direct chat agent.
 	_, err = qtx.AddChatSessionAgent(r.Context(), db.AddChatSessionAgentParams{
 		ChatSessionID: session.ID,
 		AgentID:       agentID,
@@ -108,6 +124,153 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create chat participant")
 		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit transaction")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, chatSessionToResponse(session))
+}
+
+func (h *Handler) createGroupChat(w http.ResponseWriter, r *http.Request, userID string, workspaceUUID pgtype.UUID, req CreateChatSessionRequest) {
+	if len(req.AgentIDs) < 2 {
+		writeError(w, http.StatusBadRequest, "group chat requires at least 2 agents")
+		return
+	}
+	if req.OrchestratorAgentID == "" {
+		writeError(w, http.StatusBadRequest, "orchestrator_agent_id is required for group chat")
+		return
+	}
+
+	// Deduplicate agent IDs.
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(req.AgentIDs))
+	for _, id := range req.AgentIDs {
+		if !seen[id] {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+	if len(uniqueIDs) < 2 {
+		writeError(w, http.StatusBadRequest, "group chat requires at least 2 distinct agents")
+		return
+	}
+
+	// Validate orchestrator is one of the agents.
+	isOrchestrator := false
+	for _, id := range uniqueIDs {
+		if id == req.OrchestratorAgentID {
+			isOrchestrator = true
+			break
+		}
+	}
+	if !isOrchestrator {
+		writeError(w, http.StatusBadRequest, "orchestrator_agent_id must be one of agent_ids")
+		return
+	}
+
+	orchestratorID, ok := parseUUIDOrBadRequest(w, req.OrchestratorAgentID, "orchestrator_agent_id")
+	if !ok {
+		return
+	}
+
+	// Validate all agents exist, are not archived, and are accessible.
+	actorType, actorID := h.resolveActor(r, userID, uuidToString(workspaceUUID))
+	agentUUIDs := make([]pgtype.UUID, 0, len(uniqueIDs))
+	for _, idStr := range uniqueIDs {
+		agentUUID, ok := parseUUIDOrBadRequest(w, idStr, "agent_id")
+		if !ok {
+			return
+		}
+		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          agentUUID,
+			WorkspaceID: workspaceUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "agent not found: "+idStr)
+			return
+		}
+		if agent.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "agent is archived: "+idStr)
+			return
+		}
+		if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, uuidToString(workspaceUUID)) {
+			writeError(w, http.StatusForbidden, "you do not have access to agent: "+idStr)
+			return
+		}
+		agentUUIDs = append(agentUUIDs, agentUUID)
+	}
+
+	// Build default title from agent names.
+	title := req.Title
+	if title == "" {
+		names := make([]string, 0, len(uniqueIDs))
+		for _, idStr := range uniqueIDs {
+			agent, _ := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+				ID:          parseUUID(idStr),
+				WorkspaceID: workspaceUUID,
+			})
+			if agent.Name != "" {
+				names = append(names, agent.Name)
+			}
+		}
+		if len(names) > 0 {
+			title = strings.Join(names, ", ")
+		}
+		titleSource := "agent_names"
+		_ = titleSource
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	// Create session with kind=group, agent_id=orchestrator (legacy compat).
+	session, err := qtx.CreateChatSessionV2(r.Context(), db.CreateChatSessionV2Params{
+		WorkspaceID:         workspaceUUID,
+		AgentID:             orchestratorID,
+		CreatorID:           parseUUID(userID),
+		Title:               title,
+		Kind:                "group",
+		OrchestratorAgentID: orchestratorID,
+		TitleSource:         "agent_names",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create group chat session")
+		return
+	}
+
+	// Insert orchestrator participant.
+	_, err = qtx.AddChatSessionAgent(r.Context(), db.AddChatSessionAgentParams{
+		ChatSessionID: session.ID,
+		AgentID:       orchestratorID,
+		Role:          "orchestrator",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create orchestrator participant")
+		return
+	}
+
+	// Insert other participants.
+	for _, agentUUID := range agentUUIDs {
+		if uuidToString(agentUUID) == req.OrchestratorAgentID {
+			continue // already added as orchestrator
+		}
+		_, err = qtx.AddChatSessionAgent(r.Context(), db.AddChatSessionAgentParams{
+			ChatSessionID: session.ID,
+			AgentID:       agentUUID,
+			Role:          "participant",
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create participant")
+			return
+		}
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
@@ -532,6 +695,7 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 type SendChatMessageRequest struct {
 	Content       string   `json:"content"`
 	AttachmentIDs []string `json:"attachment_ids"`
+	MentionIDs    []string `json:"mention_ids"` // agent IDs mentioned in group chat
 }
 
 type SendChatMessageResponse struct {
@@ -616,8 +780,51 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Determine target agent for task routing.
+	// Direct chat: always use session's default agent.
+	// Group chat: 0 or 2+ mentions → orchestrator; 1 mention → that agent.
+	targetAgentID := session.AgentID
+	if session.Kind == "group" && len(req.MentionIDs) > 0 {
+		// Deduplicate and validate mentions against participants.
+		seen := make(map[string]bool)
+		uniqueMentions := make([]string, 0, len(req.MentionIDs))
+		for _, id := range req.MentionIDs {
+			if !seen[id] {
+				seen[id] = true
+				uniqueMentions = append(uniqueMentions, id)
+			}
+		}
+		if len(uniqueMentions) == 1 {
+			// Single mention: route directly to that agent.
+			mentionUUID, ok := parseUUIDOrBadRequest(w, uniqueMentions[0], "mention_id")
+			if !ok {
+				return
+			}
+			// Validate the mentioned agent is a participant.
+			isParticipant := false
+			parts, _ := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), []pgtype.UUID{session.ID})
+			for _, p := range parts {
+				if uuidToString(p.AgentID) == uniqueMentions[0] {
+					isParticipant = true
+					break
+				}
+			}
+			if !isParticipant {
+				writeError(w, http.StatusBadRequest, "mentioned agent is not a participant in this chat")
+				return
+			}
+			targetAgentID = mentionUUID
+		}
+		// 0 or 2+ mentions: use orchestrator (session.AgentID for group = orchestrator).
+	}
+
 	// Enqueue a chat task after the message exists.
-	task, err := h.TaskService.EnqueueChatTask(r.Context(), session)
+	var task db.AgentTaskQueue
+	if targetAgentID != session.AgentID {
+		task, err = h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, targetAgentID)
+	} else {
+		task, err = h.TaskService.EnqueueChatTask(r.Context(), session)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to enqueue chat task: "+err.Error())
 		return
@@ -906,17 +1113,17 @@ type ChatSessionResponse struct {
 	CreatorID   string `json:"creator_id"`
 	Title       string `json:"title"`
 	Status      string `json:"status"`
-	// Only populated by list endpoints — single-session fetches return false.
 	HasUnread bool   `json:"has_unread"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
-	// IM view fields — populated when view=im.
-	Kind               string              `json:"kind,omitempty"`
-	Participants       []ParticipantResponse `json:"participants,omitempty"`
-	IsPinned           bool                `json:"is_pinned,omitempty"`
-	ArchivedAt         *string             `json:"archived_at,omitempty"`
-	LastMessagePreview *string             `json:"last_message_preview,omitempty"`
-	LastMessageAt      *string             `json:"last_message_at,omitempty"`
+	// IM view fields — populated when view=im or when creating group chats.
+	Kind                string              `json:"kind,omitempty"`
+	OrchestratorAgentID *string             `json:"orchestrator_agent_id,omitempty"`
+	Participants        []ParticipantResponse `json:"participants,omitempty"`
+	IsPinned            bool                `json:"is_pinned,omitempty"`
+	ArchivedAt          *string             `json:"archived_at,omitempty"`
+	LastMessagePreview  *string             `json:"last_message_preview,omitempty"`
+	LastMessageAt       *string             `json:"last_message_at,omitempty"`
 }
 
 type ParticipantResponse struct {
@@ -933,35 +1140,36 @@ type ChatMessageResponse struct {
 	Content       string  `json:"content"`
 	TaskID        *string `json:"task_id"`
 	CreatedAt     string  `json:"created_at"`
-	// FailureReason flags an assistant row synthesized by FailTask's chat
-	// fallback. Front-end uses it to switch to the destructive bubble.
 	FailureReason *string `json:"failure_reason"`
-	// ElapsedMs is the wall-clock duration from task creation to terminal
-	// state. Drives "Replied in 38s" / "Failed after 12s" captions.
-	ElapsedMs *int64 `json:"elapsed_ms"`
-	// Attachments linked to this message via chat_message_id. The chat
-	// bubble renders file cards from these, and the daemon claim path
-	// (daemon.go) pulls structured metadata from the same source so the
-	// agent can `multica attachment download <id>` rather than guessing
-	// from a markdown URL that may expire.
-	Attachments []AttachmentResponse `json:"attachments,omitempty"`
+	ElapsedMs     *int64  `json:"elapsed_ms"`
+	Attachments   []AttachmentResponse `json:"attachments,omitempty"`
+	// New fields for group chat / message model.
+	AgentID     *string                `json:"agent_id,omitempty"`
+	MessageType string                 `json:"message_type,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
-	return ChatSessionResponse{
+	resp := ChatSessionResponse{
 		ID:          uuidToString(s.ID),
 		WorkspaceID: uuidToString(s.WorkspaceID),
 		AgentID:     uuidToString(s.AgentID),
 		CreatorID:   uuidToString(s.CreatorID),
 		Title:       s.Title,
 		Status:      s.Status,
+		Kind:        s.Kind,
 		CreatedAt:   timestampToString(s.CreatedAt),
 		UpdatedAt:   timestampToString(s.UpdatedAt),
 	}
+	if s.OrchestratorAgentID.Valid {
+		orchID := uuidToString(s.OrchestratorAgentID)
+		resp.OrchestratorAgentID = &orchID
+	}
+	return resp
 }
 
 func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) ChatMessageResponse {
-	return ChatMessageResponse{
+	resp := ChatMessageResponse{
 		ID:            uuidToString(m.ID),
 		ChatSessionID: uuidToString(m.ChatSessionID),
 		Role:          m.Role,
@@ -971,7 +1179,20 @@ func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) C
 		FailureReason: textToPtr(m.FailureReason),
 		ElapsedMs:     int8ToPtr(m.ElapsedMs),
 		Attachments:   attachments,
+		MessageType:   m.MessageType,
 	}
+	if m.AgentID.Valid {
+		aid := uuidToString(m.AgentID)
+		resp.AgentID = &aid
+	}
+	// Parse metadata JSONB.
+	if len(m.Metadata) > 0 {
+		var meta map[string]interface{}
+		if json.Unmarshal(m.Metadata, &meta) == nil {
+			resp.Metadata = meta
+		}
+	}
+	return resp
 }
 
 // ---------------------------------------------------------------------------
