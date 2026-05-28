@@ -308,6 +308,7 @@ function AgentIdentityLine({
   participant: import("@multica/core/types").ChatParticipant;
   isOrchestrator: boolean;
 }) {
+  const { t } = useT("chat");
   return (
     <div className="flex items-center gap-1.5 mb-0.5">
       <Avatar className="size-5">
@@ -322,7 +323,7 @@ function AgentIdentityLine({
       {isOrchestrator && (
         <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5">
           <Crown className="size-2.5" />
-          Orchestrator
+          {t(($) => $.message_list.orchestrator_badge)}
         </Badge>
       )}
     </div>

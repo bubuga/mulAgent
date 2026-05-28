@@ -33,6 +33,7 @@ import {
   useRequestReplan,
 } from "@multica/core/chat/mutations";
 import type { ChatMessage, StepAttempt } from "@multica/core/types";
+import { useT } from "../../i18n";
 
 interface StepConfirmationCardProps {
   message: ChatMessage;
@@ -48,6 +49,7 @@ interface StepConfirmationCardProps {
  * to message.metadata snapshot if plan query hasn't loaded yet.
  */
 export function StepConfirmationCard({ message, sessionId }: StepConfirmationCardProps) {
+  const { t } = useT("chat");
   const metadata = (message.metadata ?? {}) as Record<string, unknown>;
   const stepId = metadata.step_id as string | undefined;
   const sequence = (metadata.sequence as number) ?? 0;
@@ -77,7 +79,7 @@ export function StepConfirmationCard({ message, sessionId }: StepConfirmationCar
         <div className="flex items-center gap-2 mb-3">
           <StepStatusIcon status={status} />
           <span className="text-sm font-medium">
-            Step {sequence}: {agentName}
+            {t(($) => $.step_confirmation.title, { sequence, agentName })}
           </span>
           <StepStatusBadge status={status} />
         </div>
@@ -118,7 +120,9 @@ export function StepConfirmationCard({ message, sessionId }: StepConfirmationCar
 
         {(status === "completed" || status === "skipped") && (
           <div className="text-sm text-muted-foreground">
-            {status === "completed" ? "Step completed successfully." : "Step skipped."}
+            {status === "completed"
+              ? t(($) => $.step_confirmation.completed)
+              : t(($) => $.step_confirmation.skipped)}
           </div>
         )}
 
@@ -157,6 +161,7 @@ function StepStatusIcon({ status }: { status: string }) {
 }
 
 function StepStatusBadge({ status }: { status: string }) {
+  const { t } = useT("chat");
   const variant = (() => {
     switch (status) {
       case "awaiting_approval":
@@ -176,19 +181,19 @@ function StepStatusBadge({ status }: { status: string }) {
   const label = (() => {
     switch (status) {
       case "awaiting_approval":
-        return "Awaiting Approval";
+        return t(($) => $.step_confirmation.status.awaiting_approval);
       case "queued":
-        return "Queued";
+        return t(($) => $.step_confirmation.status.queued);
       case "running":
-        return "Running";
+        return t(($) => $.step_confirmation.status.running);
       case "completed":
-        return "Completed";
+        return t(($) => $.step_confirmation.status.completed);
       case "failed":
-        return "Failed";
+        return t(($) => $.step_confirmation.status.failed);
       case "cancelled":
-        return "Cancelled";
+        return t(($) => $.step_confirmation.status.cancelled);
       case "skipped":
-        return "Skipped";
+        return t(($) => $.step_confirmation.status.skipped);
       default:
         return status;
     }
@@ -210,6 +215,7 @@ function AwaitingApprovalContent({
   sequence: number;
   agentName: string;
 }) {
+  const { t } = useT("chat");
   const [prompt, setPrompt] = useState(approvedPrompt ?? plannedPrompt);
   const continueStep = useContinueStep(sessionId);
   const skipStep = useSkipStep(sessionId);
@@ -225,12 +231,14 @@ function AwaitingApprovalContent({
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs text-muted-foreground mb-1 block">Prompt</label>
+        <label className="text-xs text-muted-foreground mb-1 block">
+          {t(($) => $.step_confirmation.prompt_label)}
+        </label>
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           className="text-sm min-h-[60px]"
-          placeholder="Step prompt..."
+          placeholder={t(($) => $.step_confirmation.prompt_placeholder)}
         />
       </div>
       <div className="flex gap-2">
@@ -244,7 +252,7 @@ function AwaitingApprovalContent({
           ) : (
             <Play className="h-3 w-3 mr-1" />
           )}
-          Continue
+          {t(($) => $.step_confirmation.continue)}
         </Button>
         <Button
           size="sm"
@@ -253,7 +261,7 @@ function AwaitingApprovalContent({
           disabled={skipStep.isPending}
         >
           <SkipForward className="h-3 w-3 mr-1" />
-          Skip
+          {t(($) => $.step_confirmation.skip)}
         </Button>
       </div>
     </div>
@@ -271,6 +279,7 @@ function ActiveStepContent({
   status: string;
   sequence: number;
 }) {
+  const { t } = useT("chat");
   const cancelStep = useCancelStep(sessionId);
 
   return (
@@ -283,8 +292,8 @@ function ActiveStepContent({
         )}
         <span>
           {status === "running"
-            ? `Step ${sequence} is executing...`
-            : `Step ${sequence} is queued for execution.`}
+            ? t(($) => $.step_confirmation.running_message, { sequence })
+            : t(($) => $.step_confirmation.queued_message, { sequence })}
         </span>
       </div>
       <Button
@@ -294,7 +303,7 @@ function ActiveStepContent({
         disabled={cancelStep.isPending}
       >
         <X className="h-3 w-3 mr-1" />
-        Cancel
+        {t(($) => $.step_confirmation.cancel)}
       </Button>
     </div>
   );
@@ -317,6 +326,7 @@ function FailedStepContent({
   error?: string;
   lastPrompt: string;
 }) {
+  const { t } = useT("chat");
   const [prompt, setPrompt] = useState(lastPrompt);
   const retryStep = useRetryStep(sessionId);
   const requestReplan = useRequestReplan(sessionId);
@@ -331,7 +341,9 @@ function FailedStepContent({
       )}
 
       <div>
-        <label className="text-xs text-muted-foreground mb-1 block">Prompt (editable for retry)</label>
+        <label className="text-xs text-muted-foreground mb-1 block">
+          {t(($) => $.step_confirmation.retry_prompt_label)}
+        </label>
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -350,7 +362,7 @@ function FailedStepContent({
           ) : (
             <RotateCcw className="h-3 w-3 mr-1" />
           )}
-          Retry
+          {t(($) => $.step_confirmation.retry)}
         </Button>
         <Button
           size="sm"
@@ -359,7 +371,7 @@ function FailedStepContent({
           disabled={requestReplan.isPending}
         >
           <RefreshCw className="h-3 w-3 mr-1" />
-          Request Replan
+          {t(($) => $.step_confirmation.request_replan)}
         </Button>
       </div>
     </div>
@@ -367,6 +379,7 @@ function FailedStepContent({
 }
 
 function AttemptHistory({ attempts }: { attempts: StepAttempt[] }) {
+  const { t } = useT("chat");
   const [open, setOpen] = useState(false);
 
   return (
@@ -374,7 +387,7 @@ function AttemptHistory({ attempts }: { attempts: StepAttempt[] }) {
       <CollapsibleTrigger className="w-full">
         <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground">
           {open ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
-          {attempts.length} attempts
+          {t(($) => $.step_confirmation.attempts, { count: attempts.length })}
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-1 mt-1">

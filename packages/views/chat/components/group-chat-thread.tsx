@@ -36,7 +36,7 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
 
   const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
   const session = sessions.find((item) => item.id === sessionId);
-  const participants = session?.participants ?? [];
+  const participants = useMemo(() => session?.participants ?? [], [session?.participants]);
   const orchestratorAgentId = session?.orchestrator_agent_id;
   const isArchived = session?.status === "archived" || !!session?.archived_at;
 
@@ -154,12 +154,12 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
             {orchestratorAgentId && (
               <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5">
                 <Crown className="size-2.5" />
-                Orchestrator
+                {t(($) => $.message_list.orchestrator_badge)}
               </Badge>
             )}
           </div>
           <span className="text-xs text-muted-foreground">
-            {participants.length} members
+            {t(($) => $.message_list.members, { count: participants.length })}
           </span>
         </div>
       </div>

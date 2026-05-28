@@ -6,6 +6,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { chatIMSessionsOptions } from "@multica/core/chat/queries";
 import { DirectChatThread } from "./direct-chat-thread";
 import { GroupChatThread } from "./group-chat-thread";
+import { useT } from "../../i18n";
 
 interface ChatMainAreaProps {
   sessionId?: string;
@@ -13,6 +14,7 @@ interface ChatMainAreaProps {
 
 export function ChatMainArea({ sessionId }: ChatMainAreaProps) {
   const wsId = useWorkspaceId();
+  const { t } = useT("chat");
   const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
   const session = sessionId ? sessions.find((item) => item.id === sessionId) : null;
 
@@ -23,7 +25,7 @@ export function ChatMainArea({ sessionId }: ChatMainAreaProps) {
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/40">
             <MessageSquarePlus className="h-5 w-5" />
           </div>
-          <p className="text-sm">Select a conversation</p>
+          <p className="text-sm">{t(($) => $.shell.select_conversation)}</p>
         </div>
       </div>
     );

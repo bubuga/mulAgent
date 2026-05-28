@@ -350,8 +350,6 @@ function MentionRow({
         {item.type === "all" ? t(($) => $.mention.all_members) : item.label}
       </span>
       {item.type === "agent" && (
-        // "Agent" and "Orchestrator" are glossary-protected product terms.
-        // eslint-disable-next-line i18next/no-literal-string
         <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5">
           {item.description === "Orchestrator" ? "Orchestrator" : "Agent"}
         </Badge>
