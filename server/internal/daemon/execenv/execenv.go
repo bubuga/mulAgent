@@ -74,6 +74,7 @@ type TaskContextForEnv struct {
 	// Group chat orchestrator fields.
 	ChatSessionKind   string
 	IsOrchestrator    bool
+	IsExecutionStep   bool
 	GroupParticipants []GroupParticipantForEnv
 }
 

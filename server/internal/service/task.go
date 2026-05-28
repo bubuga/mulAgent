@@ -23,6 +23,12 @@ import (
 	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
+// StepLifecycleHook is called by TaskService when step-linked tasks change state.
+type StepLifecycleHook interface {
+	OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID) error
+	OnStepTaskFailed(ctx context.Context, taskID pgtype.UUID, failureReason, errMsg string) error
+}
+
 type TaskService struct {
 	Queries   *db.Queries
 	TxStarter TxStarter
@@ -36,10 +42,18 @@ type TaskService struct {
 	// goes through the DB. Wired in router.go from the shared Redis
 	// client.
 	EmptyClaim *EmptyClaimCache
+	// StepLifecycle is called when step-linked tasks complete/fail.
+	// Set via SetStepLifecycle after both services are created.
+	StepLifecycle StepLifecycleHook
 
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
+}
+
+// SetStepLifecycle sets the step lifecycle hook.
+func (s *TaskService) SetStepLifecycle(h StepLifecycleHook) {
+	s.StepLifecycle = h
 }
 
 type TaskWakeupNotifier interface {
@@ -1127,6 +1141,14 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 		s.broadcastChatDone(ctx, task, assistantMsg)
 	}
 
+	// PR7: Step lifecycle hook — advance plan after step completion.
+	if s.StepLifecycle != nil {
+		if err := s.StepLifecycle.OnStepTaskCompleted(ctx, task.ID); err != nil {
+			slog.Warn("step lifecycle: on completed failed",
+				"task_id", util.UUIDToString(task.ID), "error", err)
+		}
+	}
+
 	// Reconcile agent status
 	s.ReconcileAgentStatus(ctx, task.AgentID)
 
@@ -1213,10 +1235,26 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
 
-	// Auto-retry eligible failures (orphan, timeout, runtime_offline,
-	// runtime_recovery). The helper itself enforces attempt < max_attempts
-	// and only triggers for issue/chat tasks.
-	retried, _ := s.MaybeRetryFailedTask(ctx, task)
+	// PR7: Step lifecycle hook — mark step failed, plan → awaiting_approval.
+	// Must run BEFORE auto-retry so step-linked tasks skip retry.
+	isStepLinked := false
+	if s.StepLifecycle != nil {
+		if err := s.StepLifecycle.OnStepTaskFailed(ctx, task.ID, failureReason, errMsg); err != nil {
+			slog.Warn("step lifecycle: on failed error",
+				"task_id", util.UUIDToString(task.ID), "error", err)
+		} else {
+			// Check if the task was actually step-linked (hook returns nil for non-step tasks too).
+			if _, attErr := s.Queries.GetStepAttemptByTaskID(ctx, task.ID); attErr == nil {
+				isStepLinked = true
+			}
+		}
+	}
+
+	// Auto-retry eligible failures — skip for step-linked tasks.
+	var retried *db.AgentTaskQueue
+	if !isStepLinked {
+		retried, _ = s.MaybeRetryFailedTask(ctx, task)
+	}
 
 	// Skip the per-failure system comment when we'll immediately retry —
 	// the new task will surface its own status to the user, and we don't

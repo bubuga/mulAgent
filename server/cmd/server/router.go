@@ -624,6 +624,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 			r.Get("/api/chat/plans/{planId}", h.GetPlan)
+			r.Post("/api/chat/plans/{planId}/request-replan", h.RequestReplan)
+			r.Post("/api/chat/steps/{stepId}/continue", h.ContinueStep)
+			r.Post("/api/chat/steps/{stepId}/skip", h.SkipStep)
+			r.Post("/api/chat/steps/{stepId}/cancel", h.CancelStep)
+			r.Post("/api/chat/steps/{stepId}/retry", h.RetryStep)
+			r.Get("/api/chat/sessions/{sessionId}/active-plan", h.GetActivePlan)
 			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
 
 			// Inbox

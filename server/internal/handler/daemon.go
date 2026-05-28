@@ -1396,6 +1396,16 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+
+			// PR7: Step-linked tasks use the attempt's approved_prompt
+			// instead of the latest user message. Also disable Orchestrator
+			// mode so the agent executes the step instead of planning.
+			if attempt, attErr := h.Queries.GetStepAttemptByTaskID(r.Context(), task.ID); attErr == nil {
+				resp.ChatMessage = attempt.ApprovedPrompt
+				resp.ChatMessageAttachments = nil
+				resp.IsOrchestrator = false
+				resp.IsExecutionStep = true
+			}
 		}
 	}
 

@@ -63,7 +63,7 @@ export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
 export type * from "./api";
 export type { Attachment } from "./attachment";
-export type { ChatSession, ChatMessage, ChatPendingTask, PendingChatTaskItem, PendingChatTasksResponse, SendChatMessageResponse, ChatParticipant } from "./chat";
+export type { ChatSession, ChatMessage, ChatPendingTask, PendingChatTaskItem, PendingChatTasksResponse, SendChatMessageResponse, ChatParticipant, ActivePlanResponse, ExecutionPlan, ExecutionStep, StepAttempt } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
   Project,

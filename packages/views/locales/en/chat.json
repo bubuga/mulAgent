@@ -10,6 +10,7 @@
     "placeholder_archived": "This session is archived",
     "placeholder_named": "Tell {{name}} what to do…",
     "placeholder_default": "Tell me what to do…",
+    "raw_agent_mention_error": "Choose the agent from the @ menu so this message routes correctly.",
     "send_tooltip": "Send",
     "stop_tooltip": "Stop"
   },

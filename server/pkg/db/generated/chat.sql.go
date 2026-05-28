@@ -1496,3 +1496,602 @@ func (q *Queries) CancelNonTerminalStepsByPlan(ctx context.Context, planID pgtyp
 	_, err := q.db.Exec(ctx, cancelNonTerminalStepsByPlan, planID)
 	return err
 }
+
+// PR7: Step execution queries
+
+const hasActiveStepTask = `-- name: HasActiveStepTask :one
+SELECT EXISTS(
+  SELECT 1 FROM chat_execution_step es
+  LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+  LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+  WHERE es.chat_session_id = $1
+    AND (
+      es.status IN ('queued', 'running')
+      OR atq.status IN ('queued', 'dispatched', 'running')
+    )
+) AS has_active
+`
+
+func (q *Queries) HasActiveStepTask(ctx context.Context, chatSessionID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveStepTask, chatSessionID)
+	var has_active bool
+	err := row.Scan(&has_active)
+	return has_active, err
+}
+
+const getExecutionStepForUpdate = `-- name: GetExecutionStepForUpdate :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetExecutionStepForUpdate(ctx context.Context, id pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getExecutionStepForUpdate, id)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockChatSessionForExecution = `-- name: LockChatSessionForExecution :one
+SELECT id FROM chat_session WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockChatSessionForExecution(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockChatSessionForExecution, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createStepAttempt = `-- name: CreateStepAttempt :one
+INSERT INTO chat_execution_step_attempt (step_id, attempt_number, task_id, approved_prompt, status)
+VALUES ($1, $2, $3, $4, 'queued')
+RETURNING id, step_id, attempt_number, task_id, approved_prompt, status, failure_reason, error, created_at, updated_at
+`
+
+type CreateStepAttemptParams struct {
+	StepID         pgtype.UUID `json:"step_id"`
+	AttemptNumber  int32       `json:"attempt_number"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	ApprovedPrompt string      `json:"approved_prompt"`
+}
+
+func (q *Queries) CreateStepAttempt(ctx context.Context, arg CreateStepAttemptParams) (ChatExecutionStepAttempt, error) {
+	row := q.db.QueryRow(ctx, createStepAttempt,
+		arg.StepID,
+		arg.AttemptNumber,
+		arg.TaskID,
+		arg.ApprovedPrompt,
+	)
+	var i ChatExecutionStepAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLatestAttemptNumber = `-- name: GetLatestAttemptNumber :one
+SELECT COALESCE(MAX(attempt_number), 0) AS latest
+FROM chat_execution_step_attempt
+WHERE step_id = $1
+`
+
+func (q *Queries) GetLatestAttemptNumber(ctx context.Context, stepID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getLatestAttemptNumber, stepID)
+	var latest interface{}
+	err := row.Scan(&latest)
+	return latest, err
+}
+
+const updateStepAttemptStatus = `-- name: UpdateStepAttemptStatus :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateStepAttemptStatusParams struct {
+	ID            pgtype.UUID `json:"id"`
+	Status        string      `json:"status"`
+	FailureReason pgtype.Text `json:"failure_reason"`
+	Error         pgtype.Text `json:"error"`
+}
+
+func (q *Queries) UpdateStepAttemptStatus(ctx context.Context, arg UpdateStepAttemptStatusParams) error {
+	_, err := q.db.Exec(ctx, updateStepAttemptStatus,
+		arg.ID,
+		arg.Status,
+		arg.FailureReason,
+		arg.Error,
+	)
+	return err
+}
+
+const getStepByTaskID = `-- name: GetStepByTaskID :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE task_id = $1
+`
+
+func (q *Queries) GetStepByTaskID(ctx context.Context, taskID pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getStepByTaskID, taskID)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStepAttemptByTaskID = `-- name: GetStepAttemptByTaskID :one
+SELECT sea.id, sea.step_id, sea.attempt_number, sea.task_id, sea.approved_prompt, sea.status, sea.failure_reason, sea.error, sea.created_at, sea.updated_at, es.plan_id, es.chat_session_id, es.sequence, es.agent_id
+FROM chat_execution_step_attempt sea
+JOIN chat_execution_step es ON es.id = sea.step_id
+WHERE sea.task_id = $1
+`
+
+type GetStepAttemptByTaskIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	StepID         pgtype.UUID        `json:"step_id"`
+	AttemptNumber  int32              `json:"attempt_number"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	ApprovedPrompt string             `json:"approved_prompt"`
+	Status         string             `json:"status"`
+	FailureReason  pgtype.Text        `json:"failure_reason"`
+	Error          pgtype.Text        `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	ChatSessionID  pgtype.UUID        `json:"chat_session_id"`
+	Sequence       int32              `json:"sequence"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+}
+
+func (q *Queries) GetStepAttemptByTaskID(ctx context.Context, taskID pgtype.UUID) (GetStepAttemptByTaskIDRow, error) {
+	row := q.db.QueryRow(ctx, getStepAttemptByTaskID, taskID)
+	var i GetStepAttemptByTaskIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+	)
+	return i, err
+}
+
+const updateStepAttemptStatusByTaskID = `-- name: UpdateStepAttemptStatusByTaskID :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE task_id = $1
+`
+
+type UpdateStepAttemptStatusByTaskIDParams struct {
+	TaskID         pgtype.UUID `json:"task_id"`
+	Status         string      `json:"status"`
+	FailureReason  pgtype.Text `json:"failure_reason"`
+	Error          pgtype.Text `json:"error"`
+}
+
+func (q *Queries) UpdateStepAttemptStatusByTaskID(ctx context.Context, arg UpdateStepAttemptStatusByTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateStepAttemptStatusByTaskID,
+		arg.TaskID,
+		arg.Status,
+		arg.FailureReason,
+		arg.Error,
+	)
+	return err
+}
+
+const updateStepTaskAndPrompt = `-- name: UpdateStepTaskAndPrompt :exec
+UPDATE chat_execution_step
+SET task_id = $2, approved_prompt = $3, status = 'queued', updated_at = now()
+WHERE id = $1
+`
+
+type UpdateStepTaskAndPromptParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	ApprovedPrompt pgtype.Text `json:"approved_prompt"`
+}
+
+func (q *Queries) UpdateStepTaskAndPrompt(ctx context.Context, arg UpdateStepTaskAndPromptParams) error {
+	_, err := q.db.Exec(ctx, updateStepTaskAndPrompt,
+		arg.ID,
+		arg.TaskID,
+		arg.ApprovedPrompt,
+	)
+	return err
+}
+
+const getLatestAttemptByStep = `-- name: GetLatestAttemptByStep :one
+SELECT id, step_id, attempt_number, task_id, approved_prompt, status, failure_reason, error, created_at, updated_at FROM chat_execution_step_attempt
+WHERE step_id = $1 ORDER BY attempt_number DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestAttemptByStep(ctx context.Context, stepID pgtype.UUID) (ChatExecutionStepAttempt, error) {
+	row := q.db.QueryRow(ctx, getLatestAttemptByStep, stepID)
+	var i ChatExecutionStepAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listRunningStepsByPlan = `-- name: ListRunningStepsByPlan :many
+SELECT DISTINCT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at FROM chat_execution_step es
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+WHERE es.plan_id = $1
+  AND (es.status IN ('queued', 'running') OR atq.status IN ('queued', 'dispatched', 'running'))
+ORDER BY es.sequence ASC
+`
+
+func (q *Queries) ListRunningStepsByPlan(ctx context.Context, planID pgtype.UUID) ([]ChatExecutionStep, error) {
+	rows, err := q.db.Query(ctx, listRunningStepsByPlan, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChatExecutionStep
+	for rows.Next() {
+		var i ChatExecutionStep
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNonTerminalStepsByPlan = `-- name: ListNonTerminalStepsByPlan :many
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step
+WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'skipped', 'failed')
+ORDER BY sequence ASC
+`
+
+func (q *Queries) ListNonTerminalStepsByPlan(ctx context.Context, planID pgtype.UUID) ([]ChatExecutionStep, error) {
+	rows, err := q.db.Query(ctx, listNonTerminalStepsByPlan, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChatExecutionStep
+	for rows.Next() {
+		var i ChatExecutionStep
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStepForUser = `-- name: GetStepForUser :one
+SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, cs.creator_id, cs.workspace_id
+FROM chat_execution_step es
+JOIN chat_session cs ON cs.id = es.chat_session_id
+WHERE es.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3
+`
+
+type GetStepForUserParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+}
+
+type GetStepForUserRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	PlanID           pgtype.UUID        `json:"plan_id"`
+	ChatSessionID    pgtype.UUID        `json:"chat_session_id"`
+	Sequence         int32              `json:"sequence"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+	Status           string             `json:"status"`
+	PlannedPrompt    string             `json:"planned_prompt"`
+	ApprovedPrompt   pgtype.Text        `json:"approved_prompt"`
+	TaskID           pgtype.UUID        `json:"task_id"`
+	ParentStepID     pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID  pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision     pgtype.Text        `json:"base_revision"`
+	ResultRevision   pgtype.Text        `json:"result_revision"`
+	ArtifactSummary  []byte             `json:"artifact_summary"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CreatorID        pgtype.UUID        `json:"creator_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+}
+
+func (q *Queries) GetStepForUser(ctx context.Context, arg GetStepForUserParams) (GetStepForUserRow, error) {
+	row := q.db.QueryRow(ctx, getStepForUser, arg.ID, arg.WorkspaceID, arg.CreatorID)
+	var i GetStepForUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CreatorID,
+		&i.WorkspaceID,
+	)
+	return i, err
+}
+
+const createStepTask = `-- name: CreateStepTask :one
+INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, chat_session_id)
+VALUES ($1, $2, 'queued', 2, $3)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task
+`
+
+type CreateStepTaskParams struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+}
+
+func (q *Queries) CreateStepTask(ctx context.Context, arg CreateStepTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, createStepTask, arg.AgentID, arg.RuntimeID, arg.ChatSessionID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+	)
+	return i, err
+}
+
+const getActivePlanWithSteps = `-- name: GetActivePlanWithSteps :one
+SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) GetActivePlanWithSteps(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getActivePlanWithSteps, chatSessionID)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listStepsWithAttempts = `-- name: ListStepsWithAttempts :many
+SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, a.name AS agent_name,
+  sea.id AS attempt_id, sea.attempt_number, sea.task_id AS attempt_task_id,
+  sea.approved_prompt AS attempt_approved_prompt, sea.status AS attempt_status,
+  sea.failure_reason AS attempt_failure_reason, sea.error AS attempt_error,
+  sea.created_at AS attempt_created_at
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC, sea.attempt_number ASC
+`
+
+type ListStepsWithAttemptsRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	PlanID               pgtype.UUID        `json:"plan_id"`
+	ChatSessionID        pgtype.UUID        `json:"chat_session_id"`
+	Sequence             int32              `json:"sequence"`
+	AgentID              pgtype.UUID        `json:"agent_id"`
+	Status               string             `json:"status"`
+	PlannedPrompt        string             `json:"planned_prompt"`
+	ApprovedPrompt       pgtype.Text        `json:"approved_prompt"`
+	TaskID               pgtype.UUID        `json:"task_id"`
+	ParentStepID         pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID      pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision         pgtype.Text        `json:"base_revision"`
+	ResultRevision       pgtype.Text        `json:"result_revision"`
+	ArtifactSummary      []byte             `json:"artifact_summary"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	AgentName            string             `json:"agent_name"`
+	AttemptID            pgtype.UUID        `json:"attempt_id"`
+	AttemptNumber        pgtype.Int4        `json:"attempt_number"`
+	AttemptTaskID        pgtype.UUID        `json:"attempt_task_id"`
+	AttemptApprovedPrompt pgtype.Text       `json:"attempt_approved_prompt"`
+	AttemptStatus        pgtype.Text        `json:"attempt_status"`
+	AttemptFailureReason pgtype.Text        `json:"attempt_failure_reason"`
+	AttemptError         pgtype.Text        `json:"attempt_error"`
+	AttemptCreatedAt     pgtype.Timestamptz `json:"attempt_created_at"`
+}
+
+func (q *Queries) ListStepsWithAttempts(ctx context.Context, planID pgtype.UUID) ([]ListStepsWithAttemptsRow, error) {
+	rows, err := q.db.Query(ctx, listStepsWithAttempts, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStepsWithAttemptsRow
+	for rows.Next() {
+		var i ListStepsWithAttemptsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AgentName,
+			&i.AttemptID,
+			&i.AttemptNumber,
+			&i.AttemptTaskID,
+			&i.AttemptApprovedPrompt,
+			&i.AttemptStatus,
+			&i.AttemptFailureReason,
+			&i.AttemptError,
+			&i.AttemptCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateStepConfirmationMetadata = `-- name: UpdateStepConfirmationMetadata :exec
+UPDATE chat_message
+SET metadata = metadata || $3::jsonb
+WHERE chat_session_id = $1
+  AND message_type = 'step_confirmation'
+  AND (metadata->>'step_id') = $2::text
+`
+
+type UpdateStepConfirmationMetadataParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	StepID        string      `json:"step_id"`
+	Metadata      []byte      `json:"metadata"`
+}
+
+func (q *Queries) UpdateStepConfirmationMetadata(ctx context.Context, arg UpdateStepConfirmationMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateStepConfirmationMetadata,
+		arg.ChatSessionID,
+		arg.StepID,
+		arg.Metadata,
+	)
+	return err
+}

@@ -9,6 +9,7 @@
     "placeholder_archived": "此会话已归档",
     "placeholder_named": "告诉 {{name}} 该做什么...",
     "placeholder_default": "告诉我该做什么...",
+    "raw_agent_mention_error": "请从 @ 下拉菜单选择智能体，确保消息能正确路由。",
     "send_tooltip": "发送",
     "stop_tooltip": "停止"
   },

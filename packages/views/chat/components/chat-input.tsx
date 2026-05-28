@@ -6,6 +6,7 @@ import { cn } from "@multica/ui/lib/utils";
 import {
   ContentEditor,
   type ContentEditorRef,
+  type MentionSuggestionContext,
   useFileDropZone,
   FileDropOverlay,
 } from "../../editor";
@@ -16,6 +17,7 @@ import { createLogger } from "@multica/core/logger";
 import { enterKey, formatShortcut, modKey } from "@multica/core/platform";
 import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import { useT } from "../../i18n";
+import { toast } from "sonner";
 
 const logger = createLogger("chat.ui");
 
@@ -44,6 +46,8 @@ interface ChatInputProps {
   /** Rendered inside the rounded container, above the editor — attached
    *  context cards, drafts, etc. */
   topSlot?: ReactNode;
+  validateContent?: (content: string) => string | null;
+  mentionContext?: MentionSuggestionContext;
   /** Override the Zustand draft storage key. Used by Web main chat to scope
    *  drafts to the selected IM session instead of the global ChatWindow store. */
   draftKeyOverride?: string;
@@ -63,6 +67,8 @@ export function ChatInput({
   leftAdornment,
   rightAdornment,
   topSlot,
+  validateContent,
+  mentionContext,
   draftKeyOverride,
   editorKeyOverride,
 }: ChatInputProps) {
@@ -158,6 +164,12 @@ export function ChatInput({
       logger.debug("input.send skipped: uploads in flight");
       return;
     }
+    const validationError = validateContent?.(content);
+    if (validationError) {
+      toast.error(validationError);
+      logger.debug("input.send skipped: validation failed", { validationError });
+      return;
+    }
     // Only send attachment IDs for uploads still present in the content.
     // Edits / deletions that remove the markdown URL also drop the binding.
     const activeIds: string[] = [];
@@ -238,6 +250,7 @@ export function ChatInput({
             }}
             onSubmit={handleSend}
             onUploadFile={uploadEnabled ? handleUpload : undefined}
+            mentionContext={mentionContext}
             debounceMs={100}
             // Chat is short-form — the floating formatting toolbar is
             // more distraction than feature here.

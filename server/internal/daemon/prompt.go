@@ -156,6 +156,26 @@ func buildCommentPrompt(task Task, provider string) string {
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
 
+	// Step execution tasks: use approved prompt, no plan CLI.
+	if task.IsExecutionStep {
+		b.WriteString("You are executing an approved plan step in a group chat.\n")
+		b.WriteString("Complete ONLY this step. Do NOT call `multica chat plan submit`.\n")
+		b.WriteString("Do NOT create new plans. Just execute the step and report the result.\n\n")
+		fmt.Fprintf(&b, "Step instruction:\n%s\n", task.ChatMessage)
+		if len(task.ChatMessageAttachments) > 0 {
+			b.WriteString("\nAttachments on this message:\n")
+			for _, a := range task.ChatMessageAttachments {
+				if a.ContentType != "" {
+					fmt.Fprintf(&b, "- id=%s filename=%q content_type=%s\n", a.ID, a.Filename, a.ContentType)
+				} else {
+					fmt.Fprintf(&b, "- id=%s filename=%q\n", a.ID, a.Filename)
+				}
+			}
+			b.WriteString("Use `multica attachment download <id>` to fetch each file locally before referring to it.\n")
+		}
+		return b.String()
+	}
+
 	if task.IsOrchestrator && task.ChatSessionKind == "group" {
 		return buildOrchestratorPrompt(task, &b)
 	}

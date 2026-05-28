@@ -194,6 +194,7 @@ type AgentTaskResponse struct {
 	// Group chat orchestrator fields — populated when the task targets a group chat.
 	ChatSessionKind   string                  `json:"chat_session_kind,omitempty"`
 	IsOrchestrator    bool                    `json:"is_orchestrator,omitempty"`
+	IsExecutionStep   bool                    `json:"is_execution_step,omitempty"`
 	GroupParticipants []GroupParticipantResponse `json:"group_participants,omitempty"`
 }
 

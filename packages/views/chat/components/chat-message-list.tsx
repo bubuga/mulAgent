@@ -24,6 +24,7 @@ import { useAutoScroll } from "@multica/ui/hooks/use-auto-scroll";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/queries";
 import { Markdown } from "@multica/views/common/markdown";
 import { copyMarkdown } from "../../editor";
+import { StepConfirmationCard } from "./step-confirmation-card";
 import { AttachmentList } from "../../issues/components/comment-card";
 import type { AgentAvailability } from "@multica/core/agents";
 import type { ChatMessage, ChatPendingTask, TaskMessagePayload, TaskFailureReason } from "@multica/core/types";
@@ -51,6 +52,8 @@ interface ChatMessageListProps {
   participants?: import("@multica/core/types").ChatParticipant[];
   /** Orchestrator agent ID for badge display. */
   orchestratorAgentId?: string | null;
+  /** Session ID for step confirmation cards. */
+  sessionId?: string;
 }
 
 export function ChatMessageList({
@@ -60,6 +63,7 @@ export function ChatMessageList({
   sessionKind,
   participants,
   orchestratorAgentId,
+  sessionId,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fadeStyle = useScrollFade(scrollRef);
@@ -102,6 +106,7 @@ export function ChatMessageList({
             sessionKind={sessionKind}
             participants={participants}
             orchestratorAgentId={orchestratorAgentId}
+            sessionId={sessionId}
           />
         ))}
         {hasLive && (
@@ -167,15 +172,21 @@ function MessageBubble({
   sessionKind,
   participants,
   orchestratorAgentId,
+  sessionId,
 }: {
   message: ChatMessage;
   isPending: boolean;
   sessionKind?: string;
   participants?: import("@multica/core/types").ChatParticipant[];
   orchestratorAgentId?: string | null;
+  sessionId?: string;
 }) {
   // System messages: centered, muted, no bubble.
   if (message.role === "system") {
+    // PR7: Step confirmation cards for step lifecycle messages.
+    if (message.message_type === "step_confirmation" && sessionId) {
+      return <StepConfirmationCard message={message} sessionId={sessionId} />;
+    }
     return (
       <div className="flex justify-center">
         <p className="text-xs text-muted-foreground italic px-4 py-1">

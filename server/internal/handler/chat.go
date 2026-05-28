@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -368,17 +369,17 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				}}
 			}
 			item := ChatSessionResponse{
-				ID:          sid,
-				WorkspaceID: uuidToString(s.WorkspaceID),
-				AgentID:     uuidToString(s.AgentID),
-				CreatorID:   uuidToString(s.CreatorID),
-				Title:       s.Title,
-				Status:      s.Status,
-				HasUnread:   s.HasUnread,
-				CreatedAt:   timestampToString(s.CreatedAt),
-				UpdatedAt:   timestampToString(s.UpdatedAt),
-				Kind:        kind,
-				IsPinned:    s.PinnedAt.Valid,
+				ID:           sid,
+				WorkspaceID:  uuidToString(s.WorkspaceID),
+				AgentID:      uuidToString(s.AgentID),
+				CreatorID:    uuidToString(s.CreatorID),
+				Title:        s.Title,
+				Status:       s.Status,
+				HasUnread:    s.HasUnread,
+				CreatedAt:    timestampToString(s.CreatedAt),
+				UpdatedAt:    timestampToString(s.UpdatedAt),
+				Kind:         kind,
+				IsPinned:     s.PinnedAt.Valid,
 				Participants: parts,
 			}
 			if s.OrchestratorAgentID.Valid {
@@ -767,10 +768,12 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	//   1 mention → that agent
 	//   2+ mentions → orchestrator
 	targetAgentID := session.AgentID
-	if session.Kind == "group" && len(req.MentionIDs) > 0 {
-		// Deduplicate mention IDs.
+	routingReason := ""
+	uniqueMentions := []string{}
+	if session.Kind == "group" {
+		routingReason = "no_mention_orchestrator"
+
 		seen := make(map[string]bool)
-		uniqueMentions := make([]string, 0, len(req.MentionIDs))
 		for _, id := range req.MentionIDs {
 			if !seen[id] {
 				seen[id] = true
@@ -778,7 +781,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Parse ALL mention IDs as UUIDs — reject any invalid UUID.
 		mentionUUIDs := make([]pgtype.UUID, 0, len(uniqueMentions))
 		for _, id := range uniqueMentions {
 			uuid, ok := parseUUIDOrBadRequest(w, id, "mention_id")
@@ -801,11 +803,28 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Route based on mention count.
 		if len(uniqueMentions) == 1 {
 			targetAgentID = mentionUUIDs[0]
+			routingReason = "single_agent_mention"
+		} else if len(uniqueMentions) > 1 {
+			routingReason = "multi_agent_orchestrator"
 		}
-		// 0 or 2+ mentions: use orchestrator (session.AgentID for group = orchestrator).
+	}
+
+	messageMetadata := []byte("{}")
+	eventMetadata := map[string]interface{}{}
+	if session.Kind == "group" {
+		eventMetadata = map[string]interface{}{
+			"mention_agent_ids": uniqueMentions,
+			"routed_agent_id":   uuidToString(targetAgentID),
+			"routing_reason":    routingReason,
+		}
+		var err error
+		messageMetadata, err = json.Marshal(eventMetadata)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encode chat routing metadata")
+			return
+		}
 	}
 
 	// Create the user message after validation passes.
@@ -814,7 +833,7 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		Role:          "user",
 		Content:       req.Content,
 		MessageType:   pgtype.Text{String: "text", Valid: true},
-		Metadata:      []byte("{}"),
+		Metadata:      messageMetadata,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create chat message")
@@ -875,7 +894,7 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		TaskID:        uuidToString(task.ID),
 		CreatedAt:     timestampToString(msg.CreatedAt),
 		MessageType:   "text",
-		Metadata:      map[string]interface{}{},
+		Metadata:      eventMetadata,
 	})
 
 	writeJSON(w, http.StatusCreated, SendChatMessageResponse{
@@ -1135,17 +1154,17 @@ type ChatSessionResponse struct {
 	CreatorID   string `json:"creator_id"`
 	Title       string `json:"title"`
 	Status      string `json:"status"`
-	HasUnread bool   `json:"has_unread"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	HasUnread   bool   `json:"has_unread"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 	// IM view fields — populated when view=im or when creating group chats.
-	Kind                string              `json:"kind,omitempty"`
-	OrchestratorAgentID *string             `json:"orchestrator_agent_id,omitempty"`
+	Kind                string                `json:"kind,omitempty"`
+	OrchestratorAgentID *string               `json:"orchestrator_agent_id,omitempty"`
 	Participants        []ParticipantResponse `json:"participants,omitempty"`
-	IsPinned            bool                `json:"is_pinned,omitempty"`
-	ArchivedAt          *string             `json:"archived_at,omitempty"`
-	LastMessagePreview  *string             `json:"last_message_preview,omitempty"`
-	LastMessageAt       *string             `json:"last_message_at,omitempty"`
+	IsPinned            bool                  `json:"is_pinned,omitempty"`
+	ArchivedAt          *string               `json:"archived_at,omitempty"`
+	LastMessagePreview  *string               `json:"last_message_preview,omitempty"`
+	LastMessageAt       *string               `json:"last_message_at,omitempty"`
 }
 
 type ParticipantResponse struct {
@@ -1156,14 +1175,14 @@ type ParticipantResponse struct {
 }
 
 type ChatMessageResponse struct {
-	ID            string  `json:"id"`
-	ChatSessionID string  `json:"chat_session_id"`
-	Role          string  `json:"role"`
-	Content       string  `json:"content"`
-	TaskID        *string `json:"task_id"`
-	CreatedAt     string  `json:"created_at"`
-	FailureReason *string `json:"failure_reason"`
-	ElapsedMs     *int64  `json:"elapsed_ms"`
+	ID            string               `json:"id"`
+	ChatSessionID string               `json:"chat_session_id"`
+	Role          string               `json:"role"`
+	Content       string               `json:"content"`
+	TaskID        *string              `json:"task_id"`
+	CreatedAt     string               `json:"created_at"`
+	FailureReason *string              `json:"failure_reason"`
+	ElapsedMs     *int64               `json:"elapsed_ms"`
 	Attachments   []AttachmentResponse `json:"attachments,omitempty"`
 	// New fields for group chat / message model.
 	AgentID     *string                `json:"agent_id,omitempty"`
@@ -1415,21 +1434,21 @@ type SubmitPlanStepRequest struct {
 }
 
 type PlanResponse struct {
-	ID          string         `json:"id"`
-	SessionID   string         `json:"chat_session_id"`
-	Status      string         `json:"status"`
-	Steps       []StepResponse `json:"steps"`
-	CreatedAt   string         `json:"created_at"`
+	ID        string         `json:"id"`
+	SessionID string         `json:"chat_session_id"`
+	Status    string         `json:"status"`
+	Steps     []StepResponse `json:"steps"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type StepResponse struct {
-	ID            string  `json:"id"`
-	PlanID        string  `json:"plan_id"`
-	Sequence      int     `json:"sequence"`
-	AgentID       string  `json:"agent_id"`
-	AgentName     string  `json:"agent_name,omitempty"`
-	Status        string  `json:"status"`
-	PlannedPrompt string  `json:"planned_prompt"`
+	ID            string `json:"id"`
+	PlanID        string `json:"plan_id"`
+	Sequence      int    `json:"sequence"`
+	AgentID       string `json:"agent_id"`
+	AgentName     string `json:"agent_name,omitempty"`
+	Status        string `json:"status"`
+	PlannedPrompt string `json:"planned_prompt"`
 }
 
 // requireOrchestratorForSession validates the caller is the orchestrator agent
@@ -1702,4 +1721,304 @@ func (h *Handler) ClearPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------------------------------------------------------------------------
+// PR7: Step lifecycle handlers
+// ---------------------------------------------------------------------------
+
+// loadStepForUser loads a step and verifies the current user owns the session.
+func (h *Handler) loadStepForUser(w http.ResponseWriter, r *http.Request, stepID string) (db.GetStepForUserRow, bool) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return db.GetStepForUserRow{}, false
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	stepUUID, ok := parseUUIDOrBadRequest(w, stepID, "step id")
+	if !ok {
+		return db.GetStepForUserRow{}, false
+	}
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return db.GetStepForUserRow{}, false
+	}
+
+	step, err := h.Queries.GetStepForUser(r.Context(), db.GetStepForUserParams{
+		ID:          stepUUID,
+		WorkspaceID: workspaceUUID,
+		CreatorID:   parseUUID(userID),
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "step not found")
+		return db.GetStepForUserRow{}, false
+	}
+	return step, true
+}
+
+// ContinueStep executes a step from awaiting_approval.
+// POST /api/chat/steps/{stepId}/continue
+func (h *Handler) ContinueStep(w http.ResponseWriter, r *http.Request) {
+	stepID := chi.URLParam(r, "stepId")
+	step, ok := h.loadStepForUser(w, r, stepID)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		ApprovedPrompt string `json:"approved_prompt"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	result, err := h.PlanService.ContinueStep(r.Context(), step.ChatSessionID, step.ID, req.ApprovedPrompt)
+	if err != nil {
+		if errors.Is(err, service.ErrStepNotAwaiting) || errors.Is(err, service.ErrActiveStepTaskExists) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to continue step: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// SkipStep skips a step from awaiting_approval.
+// POST /api/chat/steps/{stepId}/skip
+func (h *Handler) SkipStep(w http.ResponseWriter, r *http.Request) {
+	stepID := chi.URLParam(r, "stepId")
+	step, ok := h.loadStepForUser(w, r, stepID)
+	if !ok {
+		return
+	}
+
+	if err := h.PlanService.SkipStep(r.Context(), step.ChatSessionID, step.ID); err != nil {
+		if errors.Is(err, service.ErrStepNotAwaiting) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to skip step: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// CancelStep cancels an active step.
+// POST /api/chat/steps/{stepId}/cancel
+func (h *Handler) CancelStep(w http.ResponseWriter, r *http.Request) {
+	stepID := chi.URLParam(r, "stepId")
+	step, ok := h.loadStepForUser(w, r, stepID)
+	if !ok {
+		return
+	}
+
+	if err := h.PlanService.CancelStep(r.Context(), step.ChatSessionID, step.ID); err != nil {
+		if errors.Is(err, service.ErrStepNotCancellable) || errors.Is(err, service.ErrStepTaskAlreadyTerminal) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to cancel step: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RetryStep retries a failed/cancelled step.
+// POST /api/chat/steps/{stepId}/retry
+func (h *Handler) RetryStep(w http.ResponseWriter, r *http.Request) {
+	stepID := chi.URLParam(r, "stepId")
+	step, ok := h.loadStepForUser(w, r, stepID)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		ApprovedPrompt string `json:"approved_prompt"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	result, err := h.PlanService.RetryStep(r.Context(), step.ChatSessionID, step.ID, req.ApprovedPrompt)
+	if err != nil {
+		if errors.Is(err, service.ErrStepNotRetryable) || errors.Is(err, service.ErrActiveStepTaskExists) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to retry step: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// RequestReplan cancels the active plan and requests a replan.
+// POST /api/chat/plans/{planId}/request-replan
+func (h *Handler) RequestReplan(w http.ResponseWriter, r *http.Request) {
+	planID := chi.URLParam(r, "planId")
+	planUUID, ok := parseUUIDOrBadRequest(w, planID, "plan id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	plan, err := h.Queries.GetExecutionPlanForSession(r.Context(), db.GetExecutionPlanForSessionParams{
+		ID: planUUID, WorkspaceID: workspaceUUID, CreatorID: parseUUID(userID),
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "plan not found")
+		return
+	}
+
+	session, err := h.Queries.GetChatSession(r.Context(), plan.ChatSessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	if err := h.PlanService.RequestReplan(r.Context(), session); err != nil {
+		if errors.Is(err, service.ErrNoActivePlan) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrPlanHasActiveSteps) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to request replan: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetActivePlan returns the active plan with steps and attempts for a session.
+// GET /api/chat/sessions/{sessionId}/active-plan
+func (h *Handler) GetActivePlan(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	sessionUUID, ok := parseUUIDOrBadRequest(w, sessionID, "session id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	session, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
+		ID: sessionUUID, WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if uuidToString(session.CreatorID) != userID {
+		writeError(w, http.StatusForbidden, "not authorized")
+		return
+	}
+
+	plan, err := h.Queries.GetActivePlanWithSteps(r.Context(), sessionUUID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"plan": nil})
+		return
+	}
+
+	stepsWithAttempts, err := h.Queries.ListStepsWithAttempts(r.Context(), plan.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list steps")
+		return
+	}
+
+	type attemptResp struct {
+		ID             string `json:"id"`
+		AttemptNumber  int    `json:"attempt_number"`
+		TaskID         string `json:"task_id,omitempty"`
+		ApprovedPrompt string `json:"approved_prompt"`
+		Status         string `json:"status"`
+		FailureReason  string `json:"failure_reason,omitempty"`
+		Error          string `json:"error,omitempty"`
+		CreatedAt      string `json:"created_at"`
+	}
+	type stepResp struct {
+		ID             string        `json:"id"`
+		PlanID         string        `json:"plan_id"`
+		Sequence       int           `json:"sequence"`
+		AgentID        string        `json:"agent_id"`
+		AgentName      string        `json:"agent_name"`
+		Status         string        `json:"status"`
+		PlannedPrompt  string        `json:"planned_prompt"`
+		ApprovedPrompt string        `json:"approved_prompt,omitempty"`
+		Attempts       []attemptResp `json:"attempts"`
+	}
+
+	stepMap := make(map[string]*stepResp)
+	var orderedSteps []*stepResp
+
+	for _, row := range stepsWithAttempts {
+		sid := util.UUIDToString(row.ID)
+		sp, exists := stepMap[sid]
+		if !exists {
+			ap := ""
+			if row.ApprovedPrompt.Valid {
+				ap = row.ApprovedPrompt.String
+			}
+			sp = &stepResp{
+				ID: sid, PlanID: util.UUIDToString(row.PlanID),
+				Sequence: int(row.Sequence), AgentID: util.UUIDToString(row.AgentID),
+				AgentName: row.AgentName, Status: row.Status,
+				PlannedPrompt: row.PlannedPrompt, ApprovedPrompt: ap,
+			}
+			stepMap[sid] = sp
+			orderedSteps = append(orderedSteps, sp)
+		}
+		if row.AttemptID.Valid {
+			taskIDStr := ""
+			if row.AttemptTaskID.Valid {
+				taskIDStr = util.UUIDToString(row.AttemptTaskID)
+			}
+			fr := ""
+			if row.AttemptFailureReason.Valid {
+				fr = row.AttemptFailureReason.String
+			}
+			errStr := ""
+			if row.AttemptError.Valid {
+				errStr = row.AttemptError.String
+			}
+			ap := ""
+			if row.AttemptApprovedPrompt.Valid {
+				ap = row.AttemptApprovedPrompt.String
+			}
+			sp.Attempts = append(sp.Attempts, attemptResp{
+				ID:            util.UUIDToString(row.AttemptID),
+				AttemptNumber: int(row.AttemptNumber.Int32),
+				TaskID:        taskIDStr, ApprovedPrompt: ap,
+				Status: row.AttemptStatus.String, FailureReason: fr,
+				Error:     errStr,
+				CreatedAt: row.AttemptCreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+			})
+		}
+	}
+
+	type planResp struct {
+		ID        string     `json:"id"`
+		SessionID string     `json:"session_id"`
+		Status    string     `json:"status"`
+		Steps     []stepResp `json:"steps"`
+		CreatedAt string     `json:"created_at"`
+	}
+	resp := planResp{
+		ID: util.UUIDToString(plan.ID), SessionID: util.UUIDToString(plan.ChatSessionID),
+		Status: plan.Status, CreatedAt: plan.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	for _, sp := range orderedSteps {
+		resp.Steps = append(resp.Steps, *sp)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"plan": resp})
 }

@@ -239,6 +239,19 @@ type ChatExecutionStep struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ChatExecutionStepAttempt struct {
+	ID             pgtype.UUID        `json:"id"`
+	StepID         pgtype.UUID        `json:"step_id"`
+	AttemptNumber  int32              `json:"attempt_number"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	ApprovedPrompt string             `json:"approved_prompt"`
+	Status         string             `json:"status"`
+	FailureReason  pgtype.Text        `json:"failure_reason"`
+	Error          pgtype.Text        `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Comment struct {
 	ID             pgtype.UUID        `json:"id"`
 	IssueID        pgtype.UUID        `json:"issue_id"`

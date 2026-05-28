@@ -332,3 +332,109 @@ LIMIT 1;
 UPDATE chat_execution_step
 SET status = 'cancelled', updated_at = now()
 WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed', 'skipped');
+
+-- PR7: Step execution queries
+
+-- name: HasActiveStepTask :one
+SELECT EXISTS(
+  SELECT 1 FROM chat_execution_step es
+  LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+  LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+  WHERE es.chat_session_id = $1
+    AND (
+      es.status IN ('queued', 'running')
+      OR atq.status IN ('queued', 'dispatched', 'running')
+    )
+) AS has_active;
+
+-- name: GetExecutionStepForUpdate :one
+SELECT * FROM chat_execution_step WHERE id = $1 FOR UPDATE;
+
+-- name: LockChatSessionForExecution :one
+SELECT id FROM chat_session WHERE id = $1 FOR UPDATE;
+
+-- name: CreateStepAttempt :one
+INSERT INTO chat_execution_step_attempt (step_id, attempt_number, task_id, approved_prompt, status)
+VALUES ($1, $2, $3, $4, 'queued')
+RETURNING *;
+
+-- name: GetLatestAttemptNumber :one
+SELECT COALESCE(MAX(attempt_number), 0) AS latest
+FROM chat_execution_step_attempt
+WHERE step_id = $1;
+
+-- name: UpdateStepAttemptStatus :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE id = $1;
+
+-- name: GetStepByTaskID :one
+SELECT * FROM chat_execution_step WHERE task_id = $1;
+
+-- name: GetStepAttemptByTaskID :one
+SELECT sea.*, es.plan_id, es.chat_session_id, es.sequence, es.agent_id
+FROM chat_execution_step_attempt sea
+JOIN chat_execution_step es ON es.id = sea.step_id
+WHERE sea.task_id = $1;
+
+-- name: UpdateStepAttemptStatusByTaskID :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE task_id = $1;
+
+-- name: UpdateStepTaskAndPrompt :exec
+UPDATE chat_execution_step
+SET task_id = $2, approved_prompt = $3, status = 'queued', updated_at = now()
+WHERE id = $1;
+
+-- name: GetLatestAttemptByStep :one
+SELECT * FROM chat_execution_step_attempt
+WHERE step_id = $1 ORDER BY attempt_number DESC LIMIT 1;
+
+-- name: ListRunningStepsByPlan :many
+SELECT DISTINCT es.* FROM chat_execution_step es
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+WHERE es.plan_id = $1
+  AND (es.status IN ('queued', 'running') OR atq.status IN ('queued', 'dispatched', 'running'))
+ORDER BY es.sequence ASC;
+
+-- name: ListNonTerminalStepsByPlan :many
+SELECT * FROM chat_execution_step
+WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'skipped', 'failed')
+ORDER BY sequence ASC;
+
+-- name: GetStepForUser :one
+SELECT es.*, cs.creator_id, cs.workspace_id
+FROM chat_execution_step es
+JOIN chat_session cs ON cs.id = es.chat_session_id
+WHERE es.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3;
+
+-- name: CreateStepTask :one
+INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, chat_session_id)
+VALUES ($1, $2, 'queued', 2, $3)
+RETURNING *;
+
+-- name: GetActivePlanWithSteps :one
+SELECT * FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC LIMIT 1;
+
+-- name: ListStepsWithAttempts :many
+SELECT es.*, a.name AS agent_name,
+  sea.id AS attempt_id, sea.attempt_number, sea.task_id AS attempt_task_id,
+  sea.approved_prompt AS attempt_approved_prompt, sea.status AS attempt_status,
+  sea.failure_reason AS attempt_failure_reason, sea.error AS attempt_error,
+  sea.created_at AS attempt_created_at
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC, sea.attempt_number ASC;
+
+-- name: UpdateStepConfirmationMetadata :exec
+UPDATE chat_message
+SET metadata = metadata || $3::jsonb
+WHERE chat_session_id = $1
+  AND message_type = 'step_confirmation'
+  AND (metadata->>'step_id') = $2::text;

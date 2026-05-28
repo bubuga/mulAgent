@@ -2298,6 +2298,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
 		ChatSessionKind:                  task.ChatSessionKind,
 		IsOrchestrator:                   task.IsOrchestrator,
+		IsExecutionStep:                  task.IsExecutionStep,
 		GroupParticipants:                convertGroupParticipantsForEnv(task.GroupParticipants),
 	}
 

@@ -1,0 +1,172 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - button "Navigation menu" [ref=e5]:
+          - img
+        - heading "Chats" [level=2] [ref=e6]
+        - button "New chat" [ref=e7]:
+          - img
+      - generic [ref=e9]:
+        - img [ref=e10]
+        - textbox "Search chats..." [ref=e13]
+      - generic [ref=e15]:
+        - button "PR7test Group now 请帮我创建一个执行计划：第一步让 mimo1 创建 [hello.py](http://hello.py) 文件，第二步让 mimo2 创建 [world.py](http://world.py) 文件" [ref=e16]:
+          - img [ref=e18]
+          - generic [ref=e23]:
+            - generic [ref=e24]:
+              - generic [ref=e25]: PR7test
+              - generic [ref=e26]: Group
+              - generic [ref=e27]: now
+            - paragraph [ref=e28]: 请帮我创建一个执行计划：第一步让 mimo1 创建 [hello.py](http://hello.py) 文件，第二步让 mimo2 创建 [world.py](http://world.py) 文件
+        - button "PR5 group Group 11m Execution plan completed" [ref=e29]:
+          - img [ref=e31]
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - generic [ref=e38]: PR5 group
+              - generic [ref=e39]: Group
+              - generic [ref=e40]: 11m
+            - paragraph [ref=e41]: Execution plan completed
+        - 'button "mimo1, mimo2 Group 2h 是的，**现在包含**了。在我的当前系统提示中，有如下 Plan CLI 部分： --- ### Plan CLI 提交一次性执行计划： ```bash multica chat plan submit --session 4a4aab4a-d426-4792-8c74-1f27cb05447b <<''EOF'' {\"steps\":[{\"agent_id\":\"<agent-id>\",\"prompt\":\"<task description>\"}]} EOF ``` 或：`multica chat plan submit --session 4a4aab4a-d426-4792-8c74-1f27cb05447b --file plan.json` **规则：** - 每个步骤通过 ID 指定一个 agent - 最少 1 步，最多 8 步 - 步骤串行执行 - 提交是一次性的：在一个 JSON 中提供完整计划 - 使用 `--dry-run` 可以验证但不持久化 - 取消计划：`multica chat plan clear --session ...` - 409 冲突时需询问用户确认后再取消旧计划 --- **注意区分：** 我之前的回答是基于 CLAUDE.md 中的命令列表，那里确实不包含 `chat plan submit`。而 `chat plan submit` 是在群聊 Orchestrator 的 Plan CLI 上下文中提供的，属于群聊编排专用的命令，不是常规工作区命令的一部分。" [ref=e42]':
+          - img [ref=e44]
+          - generic [ref=e49]:
+            - generic [ref=e50]:
+              - generic [ref=e51]: mimo1, mimo2
+              - generic [ref=e52]: Group
+              - generic [ref=e53]: 2h
+            - paragraph [ref=e54]: "是的，**现在包含**了。在我的当前系统提示中，有如下 Plan CLI 部分： --- ### Plan CLI 提交一次性执行计划： ```bash multica chat plan submit --session 4a4aab4a-d426-4792-8c74-1f27cb05447b <<'EOF' {\"steps\":[{\"agent_id\":\"<agent-id>\",\"prompt\":\"<task description>\"}]} EOF ``` 或：`multica chat plan submit --session 4a4aab4a-d426-4792-8c74-1f27cb05447b --file plan.json` **规则：** - 每个步骤通过 ID 指定一个 agent - 最少 1 步，最多 8 步 - 步骤串行执行 - 提交是一次性的：在一个 JSON 中提供完整计划 - 使用 `--dry-run` 可以验证但不持久化 - 取消计划：`multica chat plan clear --session ...` - 409 冲突时需询问用户确认后再取消旧计划 --- **注意区分：** 我之前的回答是基于 CLAUDE.md 中的命令列表，那里确实不包含 `chat plan submit`。而 `chat plan submit` 是在群聊 Orchestrator 的 Plan CLI 上下文中提供的，属于群聊编排专用的命令，不是常规工作区命令的一部分。"
+        - button "同 同步测试 1d 你好！有什么可以帮你的吗？" [ref=e55]:
+          - generic [ref=e57]: 同
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - generic [ref=e60]: 同步测试
+              - generic [ref=e61]: 1d
+            - paragraph [ref=e62]: 你好！有什么可以帮你的吗？
+        - button "mimo1, mimo2 Group 1d 我是 **mimo1**，Multica 平台上的编码助手代理。 主要能力： - 查询、创建、更新 issue - 管理评论和元数据 - 检出代码仓库 - 查看工作区信息 有什么可以帮你的？" [ref=e63]:
+          - img [ref=e65]
+          - generic [ref=e70]:
+            - generic [ref=e71]:
+              - generic [ref=e72]: mimo1, mimo2
+              - generic [ref=e73]: Group
+              - generic [ref=e74]: 1d
+            - paragraph [ref=e75]: 我是 **mimo1**，Multica 平台上的编码助手代理。 主要能力： - 查询、创建、更新 issue - 管理评论和元数据 - 检出代码仓库 - 查看工作区信息 有什么可以帮你的？
+        - button "问 问好" [ref=e76]:
+          - generic [ref=e78]: 问
+          - generic [ref=e81]: 问好
+        - button "M Untitled 1d 你好！我是 Multica 平台的编码助手 mimo1。 有什么我可以帮助你的吗？我可以帮你查看问题、创建任务、处理代码相关的工作，或者回答关于平台的问题。" [ref=e82]:
+          - generic [ref=e84]: M
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: Untitled
+              - generic [ref=e88]: 1d
+            - paragraph [ref=e89]: 你好！我是 Multica 平台的编码助手 mimo1。 有什么我可以帮助你的吗？我可以帮你查看问题、创建任务、处理代码相关的工作，或者回答关于平台的问题。
+        - button "P PR5 legacy direct" [ref=e90]:
+          - generic [ref=e92]: P
+          - generic [ref=e95]: PR5 legacy direct
+        - button "P PR5 direct" [ref=e96]:
+          - generic [ref=e98]: P
+          - generic [ref=e101]: PR5 direct
+        - button "P PR5 legacy direct" [ref=e102]:
+          - generic [ref=e104]: P
+          - generic [ref=e107]: PR5 legacy direct
+        - button "P PR5 direct" [ref=e108]:
+          - generic [ref=e110]: P
+          - generic [ref=e113]: PR5 direct
+        - button "第 第二个会话 1d 今天（2026年5月27日）西安的天气参考信息： **预计温度范围：** - 最高温度：约 28°C - 33°C - 最低温度：约 17°C - 21°C **天气状况：** 多为晴天或多云，偶有阵雨 --- **获取准确实时温度的方式：** 由于我无法提供实时天气数据，建议您通过以下方式查询精确温度： 1. **中国气象局**（weather.com.cn） 2. **墨迹天气** 3. **AccuWeather** 或 **Weather.com** 您也可以直接在搜索引擎中搜索\"西安天气\"来获取实时信息。 需要我帮您查询其他信息吗？" [ref=e114]:
+          - generic [ref=e116]: 第
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - generic [ref=e119]: 第二个会话
+              - generic [ref=e120]: 1d
+            - paragraph [ref=e121]: 今天（2026年5月27日）西安的天气参考信息： **预计温度范围：** - 最高温度：约 28°C - 33°C - 最低温度：约 17°C - 21°C **天气状况：** 多为晴天或多云，偶有阵雨 --- **获取准确实时温度的方式：** 由于我无法提供实时天气数据，建议您通过以下方式查询精确温度： 1. **中国气象局**（weather.com.cn） 2. **墨迹天气** 3. **AccuWeather** 或 **Weather.com** 您也可以直接在搜索引擎中搜索"西安天气"来获取实时信息。 需要我帮您查询其他信息吗？
+        - button "P PR4双写测试 1d 好的，有什么需要帮忙的随时告诉我。" [ref=e122]:
+          - generic [ref=e124]: P
+          - generic [ref=e125]:
+            - generic [ref=e126]:
+              - generic [ref=e127]: PR4双写测试
+              - generic [ref=e128]: 1d
+            - paragraph [ref=e129]: 好的，有什么需要帮忙的随时告诉我。
+        - button "测 测试会话" [ref=e130]:
+          - generic [ref=e132]: 测
+          - generic [ref=e135]: 测试会话
+    - generic [ref=e136]:
+      - generic [ref=e137]:
+        - img [ref=e139]
+        - generic [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]: PR7test
+            - generic [ref=e147]:
+              - img
+              - text: Orchestrator
+          - generic [ref=e148]: 2 members
+      - generic [ref=e150]:
+        - paragraph [ref=e155]:
+          - text: 请帮我创建一个执行计划：第一步让 mimo1 创建
+          - link "hello.py" [ref=e156] [cursor=pointer]:
+            - /url: http://hello.py
+          - text: 文件，第二步让 mimo2 创建
+          - link "world.py" [ref=e157] [cursor=pointer]:
+            - /url: http://world.py
+          - text: 文件
+        - paragraph [ref=e159]: Execution plan created with 2 step(s)
+        - generic [ref=e161]:
+          - generic [ref=e162]:
+            - img [ref=e163]
+            - generic [ref=e166]: "Step 1: mimo1"
+            - generic [ref=e167]: Awaiting Approval
+          - generic [ref=e168]:
+            - generic [ref=e169]:
+              - generic [ref=e170]: Prompt
+              - textbox "Step prompt..." [ref=e171]: 创建 hello.py 文件
+            - generic [ref=e172]:
+              - button "Continue" [ref=e173]:
+                - img
+                - text: Continue
+              - button "Skip" [ref=e174]:
+                - img
+                - text: Skip
+        - generic [ref=e175]:
+          - generic [ref=e176]:
+            - generic [ref=e178]: M
+            - generic [ref=e179]: mimo2
+            - generic [ref=e180]:
+              - img
+              - text: Orchestrator
+          - button "4 步" [ref=e182]:
+            - img [ref=e183]
+            - generic [ref=e185]: 4 步
+          - generic [ref=e187]:
+            - paragraph [ref=e188]: 执行计划已提交成功！计划包含两个步骤：
+            - list [ref=e189]:
+              - listitem [ref=e190]:
+                - strong [ref=e191]: 步骤 1
+                - text: （mimo1 执行）：创建
+                - code [ref=e192]: hello.py
+                - text: 文件
+              - listitem [ref=e193]:
+                - strong [ref=e194]: 步骤 2
+                - text: （mimo2 执行）：创建
+                - code [ref=e195]: world.py
+                - text: 文件
+            - paragraph [ref=e196]:
+              - text: 计划当前状态为
+              - code [ref=e197]: awaiting_approval
+              - text: ，等待用户批准后将按顺序执行。
+          - generic [ref=e198]:
+            - generic [ref=e199]: 24s 内回复
+            - button "复制" [ref=e200]:
+              - img
+      - generic [ref=e202]:
+        - generic [ref=e203]:
+          - button "Auto" [ref=e204]
+          - button "mimo2" [ref=e205]:
+            - img [ref=e206]
+            - generic [ref=e208]: mimo2
+          - button "mimo1" [ref=e209]:
+            - generic [ref=e210]: mimo1
+        - paragraph [ref=e215]: 告诉我该做什么...
+        - generic [ref=e216]:
+          - button [disabled]:
+            - img
+  - region "Notifications alt+T"
+  - alert [ref=e217]
