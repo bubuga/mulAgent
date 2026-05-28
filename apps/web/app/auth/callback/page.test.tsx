@@ -140,7 +140,7 @@ describe("CallbackPage", () => {
     ]);
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").issues());
+      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").chat());
     });
     // Already-onboarded users skip the listMyInvitations check; new invites
     // surface in the sidebar instead of the wall.
