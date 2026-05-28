@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -1397,4 +1399,307 @@ func (h *Handler) UpdateChatSessionStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, chatSessionToResponse(session))
+}
+
+// ---------------------------------------------------------------------------
+// Execution Plans
+// ---------------------------------------------------------------------------
+
+type SubmitPlanRequest struct {
+	Steps []SubmitPlanStepRequest `json:"steps"`
+}
+
+type SubmitPlanStepRequest struct {
+	AgentID string `json:"agent_id"`
+	Prompt  string `json:"prompt"`
+}
+
+type PlanResponse struct {
+	ID          string         `json:"id"`
+	SessionID   string         `json:"chat_session_id"`
+	Status      string         `json:"status"`
+	Steps       []StepResponse `json:"steps"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+type StepResponse struct {
+	ID            string  `json:"id"`
+	PlanID        string  `json:"plan_id"`
+	Sequence      int     `json:"sequence"`
+	AgentID       string  `json:"agent_id"`
+	AgentName     string  `json:"agent_name,omitempty"`
+	Status        string  `json:"status"`
+	PlannedPrompt string  `json:"planned_prompt"`
+}
+
+// requireOrchestratorForSession validates the caller is the orchestrator agent
+// for the given group chat session. Uses resolveActor + X-Task-ID validation.
+func (h *Handler) requireOrchestratorForSession(w http.ResponseWriter, r *http.Request, session db.ChatSession) bool {
+	actorType, actorID := h.resolveActor(r, "", uuidToString(session.WorkspaceID))
+	if actorType != "agent" {
+		writeError(w, http.StatusForbidden, "plan submission requires agent identity")
+		return false
+	}
+	if !session.OrchestratorAgentID.Valid || actorID != uuidToString(session.OrchestratorAgentID) {
+		writeError(w, http.StatusForbidden, "only the orchestrator agent can submit plans")
+		return false
+	}
+	taskIDStr := r.Header.Get("X-Task-ID")
+	if taskIDStr == "" {
+		writeError(w, http.StatusForbidden, "plan submission requires a valid task context")
+		return false
+	}
+	taskUUID, ok := parseUUIDOrBadRequest(w, taskIDStr, "X-Task-ID")
+	if !ok {
+		return false
+	}
+	task, err := h.Queries.GetAgentTask(r.Context(), taskUUID)
+	if err != nil || !task.ChatSessionID.Valid || task.ChatSessionID != session.ID {
+		writeError(w, http.StatusForbidden, "task does not belong to this chat session")
+		return false
+	}
+	if uuidToString(task.AgentID) != actorID {
+		writeError(w, http.StatusForbidden, "task agent does not match orchestrator")
+		return false
+	}
+	return true
+}
+
+// SubmitPlan creates an execution plan for a group chat session.
+// POST /api/chat/sessions/{sessionId}/plan
+func (h *Handler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	sessionUUID, ok := parseUUIDOrBadRequest(w, sessionID, "session id")
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	session, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
+		ID:          sessionUUID,
+		WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "chat session not found")
+		return
+	}
+	if session.Kind != "group" {
+		writeError(w, http.StatusBadRequest, "plans can only be created for group chats")
+		return
+	}
+	if !h.requireOrchestratorForSession(w, r, session) {
+		return
+	}
+
+	var req SubmitPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.Steps) < 1 {
+		writeError(w, http.StatusBadRequest, "at least one step is required")
+		return
+	}
+	if len(req.Steps) > 8 {
+		writeError(w, http.StatusBadRequest, "maximum 8 steps per plan")
+		return
+	}
+
+	var planSteps []service.PlanSubmitStep
+	for i, step := range req.Steps {
+		prompt := strings.TrimSpace(step.Prompt)
+		if prompt == "" {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("step %d: prompt cannot be empty", i+1))
+			return
+		}
+		agentUUID, ok := parseUUIDOrBadRequest(w, step.AgentID, fmt.Sprintf("steps[%d].agent_id", i))
+		if !ok {
+			return
+		}
+		parts, _ := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), []pgtype.UUID{session.ID})
+		found := false
+		for _, p := range parts {
+			if p.AgentID == agentUUID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("step %d: agent is not a participant in this chat", i+1))
+			return
+		}
+		planSteps = append(planSteps, service.PlanSubmitStep{
+			AgentID: agentUUID,
+			Prompt:  prompt,
+		})
+	}
+
+	if r.URL.Query().Get("dry_run") == "true" {
+		steps := make([]StepResponse, len(planSteps))
+		for i, s := range planSteps {
+			steps[i] = StepResponse{
+				Sequence:      i + 1,
+				AgentID:       uuidToString(s.AgentID),
+				Status:        "planned",
+				PlannedPrompt: s.Prompt,
+			}
+		}
+		type dryRunResponse struct {
+			Valid     bool           `json:"valid"`
+			StepCount int            `json:"step_count"`
+			Steps     []StepResponse `json:"steps"`
+		}
+		writeJSON(w, http.StatusOK, dryRunResponse{
+			Valid:     true,
+			StepCount: len(planSteps),
+			Steps:     steps,
+		})
+		return
+	}
+
+	result, err := h.PlanService.SubmitPlan(r.Context(), session, session.OrchestratorAgentID, planSteps)
+	if err != nil {
+		if errors.Is(err, service.ErrActivePlanExists) {
+			writeError(w, http.StatusConflict, "an active plan already exists for this session")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to create plan: "+err.Error())
+		return
+	}
+
+	resp := PlanResponse{
+		ID:        result.PlanID,
+		SessionID: result.SessionID,
+		Status:    result.Status,
+		CreatedAt: result.CreatedAt,
+	}
+	for _, s := range result.Steps {
+		resp.Steps = append(resp.Steps, StepResponse{
+			ID:            s.ID,
+			PlanID:        s.PlanID,
+			Sequence:      s.Sequence,
+			AgentID:       s.AgentID,
+			Status:        s.Status,
+			PlannedPrompt: s.PlannedPrompt,
+		})
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// GetPlan returns an execution plan with its steps.
+// GET /api/chat/plans/{planId}
+func (h *Handler) GetPlan(w http.ResponseWriter, r *http.Request) {
+	planID := chi.URLParam(r, "planId")
+	planUUID, ok := parseUUIDOrBadRequest(w, planID, "plan id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	plan, err := h.Queries.GetExecutionPlanForSession(r.Context(), db.GetExecutionPlanForSessionParams{
+		ID:          planUUID,
+		WorkspaceID: workspaceUUID,
+		CreatorID:   parseUUID(userID),
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "plan not found")
+		return
+	}
+
+	steps, err := h.Queries.ListStepsByPlanWithAgent(r.Context(), plan.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list steps")
+		return
+	}
+
+	resp := PlanResponse{
+		ID:        uuidToString(plan.ID),
+		SessionID: uuidToString(plan.ChatSessionID),
+		Status:    plan.Status,
+		CreatedAt: timestampToString(plan.CreatedAt),
+	}
+	for _, s := range steps {
+		resp.Steps = append(resp.Steps, StepResponse{
+			ID:            uuidToString(s.ID),
+			PlanID:        uuidToString(s.PlanID),
+			Sequence:      int(s.Sequence),
+			AgentID:       uuidToString(s.AgentID),
+			AgentName:     s.AgentName,
+			Status:        s.Status,
+			PlannedPrompt: s.PlannedPrompt,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// ClearPlan cancels the active plan for a session.
+// DELETE /api/chat/sessions/{sessionId}/plan
+func (h *Handler) ClearPlan(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	sessionUUID, ok := parseUUIDOrBadRequest(w, sessionID, "session id")
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	session, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
+		ID:          sessionUUID,
+		WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "chat session not found")
+		return
+	}
+
+	userID, _ := requireUserID(w, r)
+	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	authorized := false
+	if actorType == "member" && userID == uuidToString(session.CreatorID) {
+		authorized = true
+	} else if actorType == "agent" && session.OrchestratorAgentID.Valid && actorID == uuidToString(session.OrchestratorAgentID) {
+		taskIDStr := r.Header.Get("X-Task-ID")
+		if taskIDStr != "" {
+			if taskUUID, parseOk := parseUUIDOrBadRequest(w, taskIDStr, "X-Task-ID"); parseOk {
+				if task, taskErr := h.Queries.GetAgentTask(r.Context(), taskUUID); taskErr == nil {
+					if task.ChatSessionID.Valid && task.ChatSessionID == session.ID {
+						authorized = true
+					}
+				}
+			}
+		}
+	}
+	if !authorized {
+		writeError(w, http.StatusForbidden, "not authorized to clear this plan")
+		return
+	}
+
+	if err := h.PlanService.ClearPlan(r.Context(), session.ID); err != nil {
+		if errors.Is(err, service.ErrNoActivePlan) {
+			writeError(w, http.StatusNotFound, "no active plan found")
+			return
+		}
+		if errors.Is(err, service.ErrPlanNotCancellable) {
+			writeError(w, http.StatusConflict, "only plans in awaiting_approval status can be cancelled")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to clear plan: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

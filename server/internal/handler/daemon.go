@@ -1173,6 +1173,25 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Enrich group chat tasks with orchestrator context.
+	if task.ChatSessionID.Valid {
+		if cs, err := h.Queries.GetChatSession(r.Context(), task.ChatSessionID); err == nil {
+			resp.ChatSessionKind = cs.Kind
+			if cs.OrchestratorAgentID.Valid && uuidToString(task.AgentID) == uuidToString(cs.OrchestratorAgentID) {
+				resp.IsOrchestrator = true
+			}
+			if parts, err := h.Queries.ListChatSessionParticipantsBySessionIDs(r.Context(), []pgtype.UUID{cs.ID}); err == nil {
+				for _, p := range parts {
+					resp.GroupParticipants = append(resp.GroupParticipants, GroupParticipantResponse{
+						AgentID:   uuidToString(p.AgentID),
+						AgentName: p.AgentName,
+						Role:      p.Role,
+					})
+				}
+			}
+		}
+	}
+
 	// Include workspace ID and repos so the daemon can set up worktrees.
 	//
 	// Repo precedence: project-bound github_repo resources override workspace

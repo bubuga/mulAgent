@@ -191,6 +191,17 @@ type AgentTaskResponse struct {
 	RequestingUserName               string `json:"requesting_user_name,omitempty"`
 	RequestingUserProfileDescription string `json:"requesting_user_profile_description,omitempty"`
 	Kind                    string                `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
+	// Group chat orchestrator fields — populated when the task targets a group chat.
+	ChatSessionKind   string                  `json:"chat_session_kind,omitempty"`
+	IsOrchestrator    bool                    `json:"is_orchestrator,omitempty"`
+	GroupParticipants []GroupParticipantResponse `json:"group_participants,omitempty"`
+}
+
+// GroupParticipantResponse describes a group chat participant in the claim response.
+type GroupParticipantResponse struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	Role      string `json:"role"`
 }
 
 // ChatAttachmentMeta is the structured attachment metadata embedded in

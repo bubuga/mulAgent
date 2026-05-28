@@ -619,8 +619,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/pin", h.UnpinChatSession)
 					r.Post("/archive", h.ArchiveChatSession)
 					r.Post("/unarchive", h.UnarchiveChatSession)
+					r.Post("/plan", h.SubmitPlan)
+					r.Delete("/plan", h.ClearPlan)
 				})
 			})
+			r.Get("/api/chat/plans/{planId}", h.GetPlan)
 			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
 
 			// Inbox

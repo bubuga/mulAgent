@@ -94,6 +94,24 @@ type ChatDonePayload struct {
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// ChatPlanPayload is broadcast when a plan is created or cancelled.
+type ChatPlanPayload struct {
+	ChatSessionID string `json:"chat_session_id"`
+	PlanID        string `json:"plan_id"`
+	Status        string `json:"status"`
+	StepCount     int    `json:"step_count,omitempty"`
+}
+
+// ChatStepPayload is broadcast when a step changes state.
+type ChatStepPayload struct {
+	ChatSessionID string `json:"chat_session_id"`
+	PlanID        string `json:"plan_id"`
+	StepID        string `json:"step_id"`
+	Sequence      int    `json:"sequence"`
+	AgentID       string `json:"agent_id"`
+	Status        string `json:"status"`
+}
+
 // ChatSessionReadPayload is broadcast when the creator marks a session as read.
 // Fires to other devices so their unread counts stay in sync.
 type ChatSessionReadPayload struct {

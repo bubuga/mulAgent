@@ -70,6 +70,18 @@ type TaskContextForEnv struct {
 	// context and the agent stays anonymous-user mode.
 	RequestingUserName               string
 	RequestingUserProfileDescription string
+
+	// Group chat orchestrator fields.
+	ChatSessionKind   string
+	IsOrchestrator    bool
+	GroupParticipants []GroupParticipantForEnv
+}
+
+// GroupParticipantForEnv describes a group chat participant for prompt injection.
+type GroupParticipantForEnv struct {
+	AgentID   string
+	AgentName string
+	Role      string
 }
 
 // SkillContextForEnv represents a skill to be written into the execution environment.

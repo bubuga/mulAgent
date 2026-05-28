@@ -212,6 +212,11 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	// pointer at the Windows-safe path.
 	b.WriteString("- `multica issue comment add <issue-id> [--content \"...\" | --content-stdin | --content-file <path>] [--parent <comment-id>] [--attachment <path>]` — Post a comment. Pick the input mode that preserves your content; run `multica issue comment add --help` for details.\n\n")
 
+	if ctx.IsOrchestrator && ctx.ChatSessionKind == "group" {
+		b.WriteString("- `multica chat plan submit --session <session-id> [--file <path>] [--dry-run]` — Submit a one-shot execution plan (JSON from stdin or --file). Use `--dry-run` to validate without persisting.\n")
+		b.WriteString("- `multica chat plan clear --session <session-id>` — Cancel the active execution plan.\n\n")
+	}
+
 	if provider == "codex" {
 		b.WriteString("## Codex-Specific Comment Formatting\n\n")
 		if runtimeGOOS == "windows" {

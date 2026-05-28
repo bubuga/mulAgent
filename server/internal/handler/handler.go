@@ -97,6 +97,7 @@ type Handler struct {
 	DaemonHub             *daemonws.Hub
 	Bus                   *events.Bus
 	TaskService           *service.TaskService
+	PlanService           *service.ChatPlanService
 	AutopilotService      *service.AutopilotService
 	EmailService          *service.EmailService
 	UpdateStore           UpdateStore
@@ -141,6 +142,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonHub:             daemonHub,
 		Bus:                   bus,
 		TaskService:           taskSvc,
+		PlanService:           service.NewChatPlanService(queries, txStarter, bus),
 		AutopilotService:      service.NewAutopilotService(queries, txStarter, bus, taskSvc),
 		EmailService:          emailService,
 		UpdateStore:           NewInMemoryUpdateStore(),

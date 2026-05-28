@@ -69,6 +69,18 @@ type Task struct {
 	// when description is empty so the agent doesn't see a useless heading.
 	RequestingUserName               string `json:"requesting_user_name,omitempty"`
 	RequestingUserProfileDescription string `json:"requesting_user_profile_description,omitempty"`
+
+	// Group chat orchestrator fields — populated when the task targets a group chat.
+	ChatSessionKind   string                 `json:"chat_session_kind,omitempty"`
+	IsOrchestrator    bool                   `json:"is_orchestrator,omitempty"`
+	GroupParticipants []GroupParticipantMeta `json:"group_participants,omitempty"`
+}
+
+// GroupParticipantMeta describes a participant in a group chat for orchestrator context.
+type GroupParticipantMeta struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	Role      string `json:"role"`
 }
 
 // ChatAttachmentMeta is the structured attachment metadata the daemon

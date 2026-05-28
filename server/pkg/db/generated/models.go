@@ -209,6 +209,36 @@ type ChatSessionUserState struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ChatExecutionPlan struct {
+	ID                  pgtype.UUID        `json:"id"`
+	ChatSessionID       pgtype.UUID        `json:"chat_session_id"`
+	RootMessageID       pgtype.UUID        `json:"root_message_id"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	Status              string             `json:"status"`
+	ExecutionMode       string             `json:"execution_mode"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ChatExecutionStep struct {
+	ID               pgtype.UUID        `json:"id"`
+	PlanID           pgtype.UUID        `json:"plan_id"`
+	ChatSessionID    pgtype.UUID        `json:"chat_session_id"`
+	Sequence         int32              `json:"sequence"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+	Status           string             `json:"status"`
+	PlannedPrompt    string             `json:"planned_prompt"`
+	ApprovedPrompt   pgtype.Text        `json:"approved_prompt"`
+	TaskID           pgtype.UUID        `json:"task_id"`
+	ParentStepID     pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID  pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision     pgtype.Text        `json:"base_revision"`
+	ResultRevision   pgtype.Text        `json:"result_revision"`
+	ArtifactSummary  []byte             `json:"artifact_summary"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Comment struct {
 	ID             pgtype.UUID        `json:"id"`
 	IssueID        pgtype.UUID        `json:"issue_id"`

@@ -155,6 +155,11 @@ func buildCommentPrompt(task Task, provider string) string {
 // buildChatPrompt constructs a prompt for interactive chat tasks.
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
+
+	if task.IsOrchestrator && task.ChatSessionKind == "group" {
+		return buildOrchestratorPrompt(task, &b)
+	}
+
 	b.WriteString("You are running as a chat assistant for a Multica workspace.\n")
 	b.WriteString("A user is chatting with you directly. Respond to their message.\n\n")
 	fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
@@ -211,5 +216,72 @@ func buildAutopilotPrompt(task Task) string {
 		b.WriteString("Complete the instructions above.\n")
 	}
 	b.WriteString("Do not run `multica issue get`; this run does not have an issue ID.\n")
+	return b.String()
+}
+
+// buildOrchestratorPrompt constructs the prompt for a group chat Orchestrator.
+// Overrides the direct-chat opening with group-chat context and injects the
+// plan CLI instructions with the actual session ID.
+func buildOrchestratorPrompt(task Task, b *strings.Builder) string {
+	sessionID := task.ChatSessionID
+
+	b.WriteString("## Group Chat — Orchestrator\n\n")
+	b.WriteString("You are the Orchestrator agent in a group chat with multiple agents.\n")
+	b.WriteString("Your job is to:\n")
+	b.WriteString("1. Understand the user's request\n")
+	b.WriteString("2. Break it into steps, assigning each step to the most suitable agent\n")
+	b.WriteString("3. Submit the plan using the CLI below\n")
+	b.WriteString("4. Explain the plan to the user in your visible reply\n\n")
+
+	fmt.Fprintf(b, "User message:\n%s\n\n", task.ChatMessage)
+
+	b.WriteString("### Available Agents\n\n")
+	for _, p := range task.GroupParticipants {
+		if p.Role == "orchestrator" {
+			fmt.Fprintf(b, "- **%s** (you, Orchestrator, id: %s)\n", p.AgentName, p.AgentID)
+		} else {
+			fmt.Fprintf(b, "- **%s** (id: %s)\n", p.AgentName, p.AgentID)
+		}
+	}
+
+	b.WriteString("\n### Plan CLI\n\n")
+	fmt.Fprintf(b, "Submit a one-shot execution plan for this group chat (session: %s):\n\n", sessionID)
+	b.WriteString("```bash\n")
+	fmt.Fprintf(b, "multica chat plan submit --session %s <<'EOF'\n", sessionID)
+	b.WriteString("{\"steps\":[{\"agent_id\":\"<agent-id>\",\"prompt\":\"<task description>\"}]}\n")
+	b.WriteString("EOF\n```\n\n")
+	fmt.Fprintf(b, "Or: multica chat plan submit --session %s --file plan.json\n\n", sessionID)
+	b.WriteString("Rules:\n")
+	b.WriteString("- Each step targets one agent by ID (use IDs from Available Agents above)\n")
+	b.WriteString("- Minimum 1 step, maximum 8 steps per plan\n")
+	b.WriteString("- Steps execute serially (first step runs first)\n")
+	b.WriteString("- Submit is one-shot: provide the complete plan in one JSON\n")
+	b.WriteString("- Do NOT enqueue steps yourself; the platform handles execution after user approval\n")
+	b.WriteString("- Use `--dry-run` to validate without persisting\n")
+	fmt.Fprintf(b, "- To cancel a plan: `multica chat plan clear --session %s`\n", sessionID)
+
+	b.WriteString("\n### Handling 409 Conflict\n\n")
+	b.WriteString("If `multica chat plan submit` returns HTTP 409 (active plan already exists):\n")
+	b.WriteString("1. Do NOT automatically cancel the existing plan\n")
+	b.WriteString("2. Reply to the user explaining that an active plan already exists\n")
+	b.WriteString("3. Ask the user: \"当前会话已有一个活跃的执行计划。是否取消原计划并提交新计划？\"\n")
+	b.WriteString("4. Only if the user explicitly confirms, then run:\n")
+	fmt.Fprintf(b, "   multica chat plan clear --session %s\n", sessionID)
+	fmt.Fprintf(b, "   multica chat plan submit --session %s ...\n", sessionID)
+	b.WriteString("5. If the user declines, reply: \"已保留原计划，新建议不会创建为执行计划。\"\n")
+
+	// Include attachments if any.
+	if len(task.ChatMessageAttachments) > 0 {
+		b.WriteString("\nAttachments on this message:\n")
+		for _, a := range task.ChatMessageAttachments {
+			if a.ContentType != "" {
+				fmt.Fprintf(b, "- id=%s filename=%q content_type=%s\n", a.ID, a.Filename, a.ContentType)
+			} else {
+				fmt.Fprintf(b, "- id=%s filename=%q\n", a.ID, a.Filename)
+			}
+		}
+		b.WriteString("Use `multica attachment download <id>` to fetch each file locally before referring to it.\n")
+	}
+
 	return b.String()
 }

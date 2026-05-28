@@ -259,3 +259,76 @@ FROM chat_session_agents csa
 JOIN agent a ON a.id = csa.agent_id
 WHERE csa.chat_session_id = ANY($1::uuid[])
   AND csa.removed_at IS NULL;
+
+-- name: CreateChatSystemMessage :one
+-- Dedicated query for system messages (plan_created, plan_cancelled, step_confirmation).
+INSERT INTO chat_message (chat_session_id, role, content, message_type, metadata)
+VALUES ($1, 'system', $2, $3, $4)
+RETURNING *;
+
+-- name: CreateExecutionPlan :one
+INSERT INTO chat_execution_plan (chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: GetExecutionPlan :one
+SELECT * FROM chat_execution_plan WHERE id = $1;
+
+-- name: GetExecutionPlanForSession :one
+-- User-side read gate: join chat_session to verify workspace + creator ownership.
+-- Used by GetPlan (user-facing API). If Orchestrator CLI needs plan read access
+-- in the future, add a separate agent-gate query; do not relax this one.
+SELECT ep.* FROM chat_execution_plan ep
+JOIN chat_session cs ON cs.id = ep.chat_session_id
+WHERE ep.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3;
+
+-- name: GetActivePlanBySession :one
+SELECT * FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: GetActivePlanBySessionForUpdate :one
+SELECT * FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: UpdatePlanStatus :exec
+UPDATE chat_execution_plan SET status = $2, updated_at = now() WHERE id = $1;
+
+-- name: CreateExecutionStep :one
+INSERT INTO chat_execution_step (plan_id, chat_session_id, sequence, agent_id, status, planned_prompt)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: GetExecutionStep :one
+SELECT * FROM chat_execution_step WHERE id = $1;
+
+-- name: ListStepsByPlanWithAgent :many
+SELECT es.*, a.name AS agent_name
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC;
+
+-- name: UpdateStepStatus :exec
+UPDATE chat_execution_step SET status = $2, updated_at = now() WHERE id = $1;
+
+-- name: ApproveStep :one
+UPDATE chat_execution_step
+SET status = 'queued', approved_prompt = $2, task_id = $3, updated_at = now()
+WHERE id = $1 AND status = 'awaiting_approval'
+RETURNING *;
+
+-- name: GetNextPlannedStep :one
+SELECT * FROM chat_execution_step
+WHERE plan_id = $1 AND status = 'planned'
+ORDER BY sequence ASC
+LIMIT 1;
+
+-- name: CancelNonTerminalStepsByPlan :exec
+UPDATE chat_execution_step
+SET status = 'cancelled', updated_at = now()
+WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed', 'skipped');

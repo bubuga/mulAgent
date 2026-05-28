@@ -1098,362 +1098,168 @@ git commit -m "feat(PR4.5): render direct chat thread in web shell"
 
 ## PR 5: Group Chat & Message Model
 
-**Goal:** Add group chats with manually selected Orchestrator and structured mention routing.
+**Status:** Completed and verified.
 
-**Files:**
-- Modify: `server/migrations/100_group_chat_fields.up.sql`
-- Modify: `server/migrations/100_group_chat_fields.down.sql`
-- Modify: `server/pkg/db/queries/chat.sql`
-- Modify: `server/internal/handler/chat.go`
-- Modify: `packages/core/types/chat.ts`
-- Modify: `packages/core/api/schemas.ts`
-- Modify: `packages/views/chat/components/new-group-chat-dialog.tsx`
-- Modify: `packages/views/chat/components/new-direct-chat-dialog.tsx`
-- Modify: `packages/views/chat/components/chat-session-list.tsx`
-- Modify: `packages/views/chat/components/chat-main-area.tsx`
+**Goal:** Add group chats with manually selected Orchestrator, structured mention routing, message metadata fields, and Web UI for group creation/thread/recipient selection.
 
-### Required Behavior
+### Implementation Summary
 
-- [ ] Add `chat_session.kind` with values `direct` and `group`.
-- [ ] Add `chat_session.orchestrator_agent_id`.
-- [ ] Add `chat_session.title_source` with values `manual`, `agent_names`, and `first_message`.
-- [ ] Add `chat_message.agent_id`.
-- [ ] Add `chat_message.message_type`.
-- [ ] Add `chat_message.metadata JSONB`.
-- [ ] Allow `chat_message.role='system'`.
-- [ ] Create direct chat from one selected agent.
-- [ ] Create group chat from multiple selected agents.
-- [ ] Group creation requires Orchestrator chosen from selected agents.
-- [ ] On group creation, insert one `orchestrator` participant and N `participant` rows.
-- [ ] New group enters an empty session; first message is sent later from input or task-creation flow.
-- [ ] Direct title defaults to agent name.
-- [ ] Group title defaults to joined agent names.
-- [ ] After first user message, title can be auto-updated if `title_source='agent_names'`.
+PR5 was implemented in two layers:
 
-### API Contract
+**Backend (PR5 core):**
+- Migration `101_group_chat_fields.up.sql`: adds `kind`, `orchestrator_agent_id`, `title_source` to `chat_session`; adds `agent_id`, `message_type`, `metadata` to `chat_message`; expands `role` constraint to include `system`
+- `CreateChatSessionV2` SQL for group creation with kind/orchestrator
+- `createGroupChat` handler validates agents, orchestrator, deduplication, private-agent access
+- `SendChatMessage` with `mention_ids` routing: 1 mention → that agent, 0/2+ → orchestrator
+- `EnqueueChatTaskForAgent` for targeted agent task creation
+- `title_source`: "manual" when user provides title, "agent_names" when auto-generated
 
-Use one create endpoint for both direct and group chats:
+**Web UI (PR5 Web UI + Backend Fixes):**
+- `new-chat-dialog.tsx`: two-tab dialog (Direct/Group) with agent picker, orchestrator selection
+- `group-chat-thread.tsx`: group header, member count, orchestrator badge, mention-aware send
+- `group-recipient-selector.tsx`: Auto/agent chips for mention routing
+- `chat-session-list.tsx`: Users icon for groups, "Group" badge, participant name search
+- `chat-message-list.tsx`: agent identity (avatar + name) for group assistant messages, system message rendering, orchestrator crown badge
+- `chat-shell.tsx`: + button wired to new-chat dialog
 
-```http
-POST /api/chat/sessions
-```
+**Backend fixes applied during PR5:**
+- `GetChatSession`/`GetChatSessionInWorkspace` now include `kind`, `orchestrator_agent_id`, `title_source` columns
+- `ListChatMessages` returns `agent_id`, `message_type`, `metadata`
+- `CreateChatMessage` passes `message_type='text'` and `metadata={}` for user messages; `agent_id` for assistant messages
+- WS `chat:message` and `chat:done` payloads include `agent_id`, `message_type`, `metadata`
+- `applyChatDoneToCache` includes new fields in optimistic assistant message
+- Mention validation moved before message creation (invalid mentions no longer leave orphan messages)
+- All mention IDs validated against participants (not just single-mention case)
+- `title_source` correctly set to "manual" vs "agent_names"
 
-Direct request:
+### Files Changed
 
-```json
-{
-  "kind": "direct",
-  "agent_id": "agent uuid",
-  "title": "optional title"
-}
-```
+| File | Action |
+|------|--------|
+| `server/migrations/101_group_chat_fields.up.sql` | Create |
+| `server/migrations/101_group_chat_fields.down.sql` | Create |
+| `server/pkg/db/queries/chat.sql` | Modify — CreateChatSessionV2, ListChatMessages explicit columns |
+| `server/pkg/db/generated/chat.sql.go` | Regenerate |
+| `server/pkg/db/generated/models.go` | Modify — ChatSession/ChatMessage add new fields |
+| `server/internal/handler/chat.go` | Modify — createGroupChat, mention routing, WS payload fields |
+| `server/internal/service/task.go` | Modify — EnqueueChatTaskForAgent, broadcastChatDone with agent_id |
+| `server/pkg/protocol/messages.go` | Modify — ChatMessagePayload/ChatDonePayload add fields |
+| `packages/core/api/client.ts` | Modify — createChatSession accepts group params |
+| `packages/core/chat/mutations.ts` | Modify — useCreateChatSession accepts group params |
+| `packages/core/types/chat.ts` | Modify — ChatSession/ChatMessage/ChatParticipant types |
+| `packages/core/types/events.ts` | Modify — WS payload types add fields |
+| `packages/core/api/schemas.ts` | Modify — ChatSessionSchema/ChatMessageSchema add fields |
+| `packages/core/realtime/use-realtime-sync.ts` | Modify — applyChatDoneToCache includes new fields |
+| `packages/views/chat/components/new-chat-dialog.tsx` | Create |
+| `packages/views/chat/components/group-chat-thread.tsx` | Create |
+| `packages/views/chat/components/group-recipient-selector.tsx` | Create |
+| `packages/views/chat/components/chat-session-list.tsx` | Modify — group icon, badge, participant search |
+| `packages/views/chat/components/chat-main-area.tsx` | Modify — routes group to GroupChatThread |
+| `packages/views/chat/components/chat-message-list.tsx` | Modify — agent identity, system messages, orchestrator badge |
+| `packages/views/chat/components/chat-shell.tsx` | Modify — + button opens dialog |
 
-Group request:
+### PR5 Verification Record
 
-```json
-{
-  "kind": "group",
-  "agent_ids": ["agent uuid", "agent uuid"],
-  "orchestrator_agent_id": "agent uuid",
-  "title": "optional title"
-}
-```
-
-Send-message request:
-
-```json
-{
-  "content": "message text",
-  "attachment_ids": ["attachment uuid"],
-  "mention_ids": ["agent uuid"]
-}
-```
-
-### PR5 Engineering Boundaries
-
-- [ ] `kind` is optional in requests during compatibility transition. Missing `kind` means legacy direct chat.
-- [ ] Direct requests require exactly one effective `agent_id`.
-- [ ] Group requests require `agent_ids.length >= 2`.
-- [ ] Group `agent_ids` must be deduplicated before validation.
-- [ ] `orchestrator_agent_id` is required for group requests.
-- [ ] `orchestrator_agent_id` must be one of `agent_ids`.
-- [ ] All group agents must belong to the current workspace.
-- [ ] Archived agents cannot be selected.
-- [ ] Private-agent access rules must be applied to every selected agent, not only the Orchestrator.
-- [ ] Group creation must run in one transaction: create session, insert participants, commit once.
-- [ ] For group compatibility, `chat_session.agent_id` should store the Orchestrator agent ID until all legacy paths stop requiring a single agent.
-- [ ] `chat_session.orchestrator_agent_id` is nullable for direct chats and required for group chats.
-- [ ] Direct chats should not have an active participant with role `orchestrator`.
-- [ ] Group chats must have exactly one active participant with role `orchestrator`.
-- [ ] Group creation does not send the first message automatically.
-- [ ] `mention_ids` must be structured JSON in the request. Do not parse `@name` from `content` in the backend.
-- [ ] `mention_ids` must be validated against active participants in the current chat.
-- [ ] Direct-chat send ignores `mention_ids` for routing but may keep them in message metadata later if UI needs display.
-- [ ] System messages use `role='system'`, `message_type`, and `metadata`; do not create separate UI-only tables for system cards.
-- [ ] `chat_message.message_type` defaults to `text` for old and new normal messages.
-- [ ] `chat_message.metadata` defaults to `{}`.
-- [ ] `ChatMessageResponse`, `packages/core/types/chat.ts`, and `ChatMessageSchema` must all include `agent_id`, `message_type`, and `metadata`.
-- [ ] `CreateChatMessage` SQL must accept nullable `agent_id`, `message_type`, and `metadata`.
-- [ ] Existing user and assistant messages must remain readable after the migration.
-- [ ] WS `chat:message` payload must include `agent_id`, `message_type`, and `metadata` after this PR.
-
-### Mention Routing
-
-- [ ] Direct chat ignores mention routing and sends to the direct agent.
-- [ ] Group with exactly one `mention_ids` entry sends directly to that agent.
-- [ ] Group with zero `mention_ids` sends to Orchestrator.
-- [ ] Group with two or more `mention_ids` sends to Orchestrator.
-- [ ] `mention_ids` must be structured request data, not parsed from natural language text.
-- [ ] Mentioned agent must be a current participant.
-
-### PR5 Browser Console Fetch Requests
-
-#### 1. Create direct chat with new contract
-
-```js
-const agentId = "replace-with-agent-id";
-await apiFetch("/api/chat/sessions", {
-  method: "POST",
-  body: JSON.stringify({
-    kind: "direct",
-    agent_id: agentId,
-    title: "Console PR5 direct",
-  }),
-});
-```
-
-Expected:
-- Status `201`.
-- Response has `kind: "direct"` or remains legacy-compatible with `agent_id`.
-- IM list shows one participant.
-
-#### 2. Create group chat
-
-```js
-const agentId = "replace-with-agent-id";
-const agentId2 = "replace-with-second-agent-id";
-const { body: groupSession } = await apiFetch("/api/chat/sessions", {
-  method: "POST",
-  body: JSON.stringify({
-    kind: "group",
-    agent_ids: [agentId, agentId2],
-    orchestrator_agent_id: agentId,
-    title: "Console PR5 group",
-  }),
-});
-console.log("Group session:", groupSession?.id);
-```
-
-Expected:
-- Status `201`.
-- Response has `kind: "group"`.
-- `orchestrator_agent_id` equals `{{agentId}}`.
-- IM list shows two participants, one with role `orchestrator`.
-
-#### 3. Reject group without Orchestrator
-
-```js
-const agentId = "replace-with-agent-id";
-const agentId2 = "replace-with-second-agent-id";
-await apiFetch("/api/chat/sessions", {
-  method: "POST",
-  body: JSON.stringify({
-    kind: "group",
-    agent_ids: [agentId, agentId2],
-  }),
-});
-```
-
-Expected:
-- Status `400`.
-- Error says Orchestrator is required.
-
-#### 4. Send group message to one mentioned agent
-
-```js
-const groupSessionId = "replace-with-group-session-id";
-const agentId2 = "replace-with-mentioned-agent-id";
-await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
-  method: "POST",
-  body: JSON.stringify({
-    content: "Please handle this part.",
-    mention_ids: [agentId2],
-  }),
-});
-```
-
-Expected:
-- Status `202` or current send-message success status.
-- Enqueued task target is `{{agentId2}}`.
-- Orchestrator is not invoked for this message.
-
-#### 5. Send group message with zero mentions
-
-```js
-const groupSessionId = "replace-with-group-session-id";
-await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
-  method: "POST",
-  body: JSON.stringify({
-    content: "Plan the next steps.",
-  }),
-});
-```
-
-Expected:
-- Status `202` or current send-message success status.
-- Enqueued task target is the group Orchestrator.
-
-#### 6. Send group message with multiple mentions
-
-```js
-const groupSessionId = "replace-with-group-session-id";
-const agentId = "replace-with-agent-id";
-const agentId2 = "replace-with-second-agent-id";
-await apiFetch(`/api/chat/sessions/${groupSessionId}/messages`, {
-  method: "POST",
-  body: JSON.stringify({
-    content: "Coordinate these agents.",
-    mention_ids: [agentId, agentId2],
-  }),
-});
-```
-
-Expected:
-- Status `202` or current send-message success status.
-- Enqueued task target is the group Orchestrator.
+| # | Test | Result |
+|---|------|--------|
+| 1 | Direct regression (with kind) | ✅ 201, kind: direct, participants: 1 |
+| 2 | Direct regression (without kind) | ✅ 201, kind: direct, participants: 1 |
+| 3 | Group creation main path | ✅ 201, kind: group |
+| 4 | Group participants in list | ✅ 2 items, roles: participant,orchestrator |
+| 5 | Group orchestrator_agent_id in list | ✅ agent ID displayed |
+| 6 | Empty group has no auto-message | ✅ empty array |
+| 7 | Single mention routing (API) | ✅ agent_id matches mentioned agent |
+| 8 | Zero mention routing | ✅ orchestrator replies |
+| 9 | Multi mention routing | ✅ orchestrator replies |
+| 10 | message_type field | ✅ "text" |
+| 11 | assistant agent_id | ✅ populated |
+| 12 | Reject: no orchestrator | ✅ 400 |
+| 13 | Reject: orchestrator not in agent_ids | ✅ 400 |
+| 14 | Reject: < 2 agents | ✅ 400 |
+| 15 | New chat dialog — direct | ✅ |
+| 16 | New chat dialog — group (2-step) | ✅ |
+| 17 | Session list group icon + badge | ✅ |
+| 18 | Agent name/avatar in group messages | ✅ |
+| 19 | Orchestrator crown badge | ✅ |
+| 20 | Recipient selector (Auto/agent chips) | ✅ |
+| 21 | `pnpm typecheck` | ✅ 6 packages |
+| 22 | `pnpm test` | ✅ 701 tests |
+| 23 | `go test ./internal/handler/` | ✅ |
 
 ---
 
 ## PR 6: Plan CLI & Step State
 
-**Goal:** Let Orchestrator create a structured execution plan without natural-language parsing.
+**Status:** Plan ready for implementation.
 
-**Files:**
-- Create: `server/migrations/101_chat_execution_plan.up.sql`
-- Create: `server/migrations/101_chat_execution_plan.down.sql`
-- Modify: `server/pkg/db/queries/chat.sql`
-- Modify: `server/internal/handler/chat.go`
-- Modify: `server/cmd/server/router.go`
-- Modify: CLI command files under `server/cmd/multica`
+**Goal:** Let Orchestrator create structured execution plans via one-shot JSON CLI. No natural-language parsing.
 
-### Required Behavior
+**Key design:** Orchestrator calls `multica chat plan submit --session <id>` with complete JSON plan. CLI is stateless. First step enters `awaiting_approval`, PR7 handles confirmation UI and execution.
 
-- [ ] Create `chat_execution_plan`.
-- [ ] Create `chat_execution_step`.
-- [ ] Plan has `execution_mode` with `serial` default and `parallel` reserved.
-- [ ] Step has `sequence`, `agent_id`, `planned_prompt`, `approved_prompt`, `status`, `task_id`, `base_revision`, `result_revision`, and `artifact_summary`.
-- [ ] Orchestrator can add steps through structured API or CLI.
-- [ ] Step creation validates target agent is a group participant.
-- [ ] Submitted steps become `awaiting_approval`.
-- [ ] The chat stream receives system cards for steps awaiting approval.
+### PR6 Final Engineering Boundaries
 
-### PR6 Engineering Boundaries
-
-- [ ] Plan APIs are structured JSON APIs. Do not accept natural-language plan text and parse it server-side.
-- [ ] Only the group Orchestrator path can create or submit plans for that group chat.
-- [ ] User-authenticated plan creation is allowed only for test/admin tooling if explicitly guarded; default product flow is Orchestrator task -> CLI/API -> plan.
-- [ ] The server must verify `orchestrator_agent_id` equals the active Orchestrator participant for the chat.
-- [ ] Each step `agent_id` must be an active participant in the same chat.
-- [ ] A plan belongs to exactly one `chat_session_id`.
-- [ ] A step belongs to exactly one plan and repeats `chat_session_id` for efficient locking/querying.
-- [ ] Step `sequence` is unique per plan.
-- [ ] Submitted plan creation and step creation must be transactional.
-- [ ] If any step is invalid, no partial plan should remain unless the plan is explicitly kept as `draft`.
-- [ ] v1 creates `awaiting_approval` steps after submit. It must not enqueue worker tasks during plan submission.
-- [ ] `execution_mode='parallel'` can exist in schema but API should reject it or require explicit feature flag until parallel execution is implemented.
-- [ ] Plan/step statuses must be documented as a finite state machine.
-- [ ] Step system cards should be represented as `chat_message.role='system'`, `message_type='step_confirmation'`, and metadata containing `plan_id`, `step_id`, `sequence`, `agent_id`, and `planned_prompt`.
-- [ ] Realtime events should invalidate plan/step queries or chat messages through React Query.
-- [ ] CLI commands must send the same API payload shape that browser Console `fetch` validation can test.
+1. **root_message_id** — PR6 does not require it. Nullable. SubmitPlan passes NULL.
+2. **dry_run** — `?dry_run=true` validates only, returns `{valid, step_count, steps}`, no DB writes, no WS events.
+3. **active plan uniqueness** — partial unique index `idx_chat_execution_plan_one_active` prevents concurrent plans per session.
+4. **step/task uniqueness** — `idx_chat_execution_step_task` unique index on `task_id` where not null.
+5. **sequence validation** — `CHECK (sequence > 0)`.
+6. **SubmitPlan auth** — `resolveActor` + `actorType == "agent"` + `actorID == orchestrator_agent_id` + X-Task-ID belongs to this session. Does NOT use `gateChatSessionForUser`.
+7. **ClearPlan auth** — session creator (via `GetChatSessionInWorkspace` + `canAccessPrivateAgent`) OR orchestrator agent (via resolveActor + X-Task-ID). Uses `SELECT ... FOR UPDATE` lock.
+8. **daemon env** — inject `MULTICA_CHAT_SESSION_ID` when `task.ChatSessionID` is non-empty.
+9. **service boundary** — `ChatPlanService` owns DTOs (`PlanSubmitStep`, `PlanResult`, `StepResult`). Depends on `TxStarter` (from `service` package, not `db`). Handler types don't leak into service.
+10. **system messages** — dedicated `CreateChatSystemMessage` query. `plan_created`/`plan_cancelled` use `role="system"`, `message_type`, `metadata`.
+11. **prompt injection** — group Orchestrator prompt uses group-chat wording (overrides direct-chat opening), includes all agent IDs (including Orchestrator itself), uses actual `task.ChatSessionID`.
+12. **`draft` status** — reserved for future use. PR6 creates plans as `awaiting_approval`.
 
 ### Plan/Step State Machine
 
-Plan statuses:
-- `draft`
-- `awaiting_approval`
-- `running`
-- `completed`
-- `cancelled`
-- `failed`
+Plan: `draft`(reserved) → `awaiting_approval` → `running` → `completed`/`cancelled`/`failed`
 
-Step statuses:
-- `planned`
-- `awaiting_approval`
-- `queued`
-- `running`
-- `completed`
-- `skipped`
-- `cancelled`
-- `failed`
+Step: `planned` → `awaiting_approval` → `queued` → `running` → `completed`/`failed`/`skipped`/`cancelled`
 
-Allowed step transitions:
-- `planned -> awaiting_approval`
-- `awaiting_approval -> queued`
-- `awaiting_approval -> skipped`
-- `awaiting_approval -> cancelled`
-- `queued -> running`
-- `running -> completed`
-- `running -> failed`
-- `queued -> cancelled`
-- `running -> cancelled`
+### Files Modified
 
-### PR6 Browser Console Fetch Requests
+| File | Action |
+|------|--------|
+| `server/migrations/102_chat_execution_plan.up.sql` | Create |
+| `server/migrations/102_chat_execution_plan.down.sql` | Create |
+| `server/pkg/db/queries/chat.sql` | Modify — plan/step/system-message queries |
+| `server/pkg/db/generated/*.go` | Regenerate (`make sqlc`) |
+| `server/internal/handler/chat.go` | Modify — SubmitPlan, GetPlan, ClearPlan handlers + orchestrator auth |
+| `server/internal/handler/handler.go` | Modify — add PlanService field + init |
+| `server/internal/handler/chat_test.go` | Modify — 14 handler tests |
+| `server/internal/service/chat_plan.go` | Create — service + DTOs |
+| `server/internal/handler/daemon.go` | Modify — claim response (ChatSessionKind, IsOrchestrator, GroupParticipants) |
+| `server/internal/daemon/types.go` | Modify — Task struct extensions |
+| `server/internal/daemon/daemon.go` | Modify — env injection + TaskContextForEnv |
+| `server/internal/daemon/execenv/execenv.go` | Modify — TaskContextForEnv extensions |
+| `server/internal/daemon/prompt.go` | Modify — orchestrator prompt injection |
+| `server/internal/daemon/execenv/runtime_config.go` | Modify — plan CLI in meta skill |
+| `server/pkg/protocol/events.go` | Modify — plan/step event constants |
+| `server/pkg/protocol/messages.go` | Modify — plan/step payload types |
+| `server/cmd/multica/cmd_chat.go` | Create — `multica chat plan submit/clear` |
+| `server/cmd/multica/cmd_chat_test.go` | Create — 3 CLI tests |
+| `server/cmd/multica/main.go` | Modify — register chatCmd |
+| `server/cmd/server/router.go` | Modify — plan routes |
 
-#### 1. Submit structured plan
+### Routes
 
-```js
-const groupSessionId = "replace-with-group-session-id";
-const rootMessageId = "replace-with-root-message-id";
-const orchestratorAgentId = "replace-with-orchestrator-agent-id";
-const agentId2 = "replace-with-worker-agent-id";
-await apiFetch("/api/chat/plans", {
-  method: "POST",
-  body: JSON.stringify({
-    chat_session_id: groupSessionId,
-    root_message_id: rootMessageId,
-    orchestrator_agent_id: orchestratorAgentId,
-    execution_mode: "serial",
-    steps: [
-      {
-        agent_id: agentId2,
-        planned_prompt: "Implement the first part.",
-      },
-    ],
-  }),
-});
+```
+POST   /api/chat/sessions/{sessionId}/plan   → SubmitPlan
+GET    /api/chat/plans/{planId}              → GetPlan
+DELETE /api/chat/sessions/{sessionId}/plan   → ClearPlan
 ```
 
-Expected:
-- Status `201`.
-- Response includes `plan_id`.
-- Created step status is `awaiting_approval`.
-- Chat messages include a `step_confirmation` system card.
+### Verification
 
-#### 2. Reject step targeting non-participant
-
-```js
-const groupSessionId = "replace-with-group-session-id";
-const orchestratorAgentId = "replace-with-orchestrator-agent-id";
-const nonParticipantAgentId = "replace-with-non-participant-agent-id";
-await apiFetch("/api/chat/plans", {
-  method: "POST",
-  body: JSON.stringify({
-    chat_session_id: groupSessionId,
-    orchestrator_agent_id: orchestratorAgentId,
-    execution_mode: "serial",
-    steps: [
-      {
-        agent_id: nonParticipantAgentId,
-        planned_prompt: "This should fail.",
-      },
-    ],
-  }),
-});
+```bash
+cd server
+go test ./internal/handler/ -run "TestChatPlan" -v -count=1
 ```
 
-Expected:
-- Status `400` or `403`.
-- No runnable step is created.
+Docker rebuild + browser: Orchestrator receives plan CLI in prompt → submits plan → first step `awaiting_approval` → system message in chat → plan API returns steps.
+
+**PR6 does NOT implement:** Step confirmation UI (PR7), step continue/skip/cancel (PR7), step execution (PR7), handoff bundle (PR8).
 
 ---
 

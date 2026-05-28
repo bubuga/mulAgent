@@ -2296,6 +2296,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		IsSquadLeader:           strings.Contains(instructions, "## Squad Operating Protocol"),
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
+		ChatSessionKind:                  task.ChatSessionKind,
+		IsOrchestrator:                   task.IsOrchestrator,
+		GroupParticipants:                convertGroupParticipantsForEnv(task.GroupParticipants),
 	}
 
 	// Mark candidate env roots as active before any env work so the GC loop
@@ -2390,6 +2393,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// deterministically (see GetIssueByOrigin).
 	if task.QuickCreatePrompt != "" {
 		agentEnv["MULTICA_QUICK_CREATE_TASK_ID"] = task.ID
+	}
+	if task.ChatSessionID != "" {
+		agentEnv["MULTICA_CHAT_SESSION_ID"] = task.ChatSessionID
 	}
 	// Ensure the multica CLI is on PATH inside the agent's environment.
 	// Some runtimes (e.g. Codex) run in an isolated sandbox that may not
@@ -3211,6 +3217,21 @@ func convertSkillsForEnv(skills []SkillData) []execenv.SkillContextForEnv {
 				Path:    f.Path,
 				Content: f.Content,
 			})
+		}
+	}
+	return result
+}
+
+func convertGroupParticipantsForEnv(participants []GroupParticipantMeta) []execenv.GroupParticipantForEnv {
+	if len(participants) == 0 {
+		return nil
+	}
+	result := make([]execenv.GroupParticipantForEnv, len(participants))
+	for i, p := range participants {
+		result[i] = execenv.GroupParticipantForEnv{
+			AgentID:   p.AgentID,
+			AgentName: p.AgentName,
+			Role:      p.Role,
 		}
 	}
 	return result
