@@ -107,6 +107,28 @@ type RevisionInfo struct {
 	Warning    string   `json:"warning,omitempty"`
 }
 
+// ArtifactSummary describes file changes detected in the workspace after a step.
+type ArtifactSummary struct {
+	Version           int                   `json:"version"`
+	Summary           string                `json:"summary"`
+	ChangedFiles      []ArtifactChangedFile `json:"changed_files"`
+	TotalChangedFiles int                   `json:"total_changed_files"`
+	Truncated         bool                  `json:"truncated"`
+	DiffStat          ArtifactDiffStat      `json:"diff_stat"`
+	Warnings          []string              `json:"warnings,omitempty"`
+}
+
+type ArtifactChangedFile struct {
+	Path       string `json:"path"`
+	ChangeType string `json:"change_type"` // "added" or "modified"
+	SizeBytes  int64  `json:"size_bytes"`
+}
+
+type ArtifactDiffStat struct {
+	Added    int `json:"added"`
+	Modified int `json:"modified"`
+}
+
 // ChatHandoffBundle is the daemon-side mirror of handler.ChatHandoffBundleResponse.
 type ChatHandoffBundle struct {
 	Version           int                       `json:"version"`
@@ -212,4 +234,9 @@ type TaskResult struct {
 	EnvRoot       string           `json:"-"`                    // env root dir for writing GC metadata (not sent to server)
 	FailureReason string           `json:"-"`                    // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
 	Usage         []TaskUsageEntry `json:"usage,omitempty"`      // per-model token usage
+
+	// PR9: Artifact detection fields (local-only, never sent via client JSON).
+	ArtifactSummary          *ArtifactSummary                `json:"-"` // set by attachArtifactSummary, sent via CompleteTask param
+	ArtifactBaseline         map[string]artifactFileSnapshot `json:"-"` // internal: carries baseline from runTask → handleTask
+	ArtifactBaselineWarnings []string                        `json:"-"` // internal: warnings from baseline capture
 }
