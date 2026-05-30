@@ -1694,14 +1694,15 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 
 // CompleteTask marks a running task as completed.
 type TaskCompleteRequest struct {
-	PRURL            string                  `json:"pr_url"`
-	Output           string                  `json:"output"`
-	SessionID        string                  `json:"session_id"`
-	WorkDir          string                  `json:"work_dir"`
-	BranchName       string                  `json:"branch_name,omitempty"`
-	BaseRevision     *service.TaskRevisionInfo `json:"base_revision,omitempty"`
-	ResultRevision   *service.TaskRevisionInfo `json:"result_revision,omitempty"`
-	RevisionWarnings []string                `json:"revision_warnings,omitempty"`
+	PRURL            string                    `json:"pr_url"`
+	Output           string                    `json:"output"`
+	SessionID        string                    `json:"session_id"`
+	WorkDir          string                    `json:"work_dir"`
+	BranchName       string                    `json:"branch_name,omitempty"`
+	BaseRevision     *service.TaskRevisionInfo  `json:"base_revision,omitempty"`
+	ResultRevision   *service.TaskRevisionInfo  `json:"result_revision,omitempty"`
+	RevisionWarnings []string                  `json:"revision_warnings,omitempty"`
+	ArtifactSummary  *service.TaskArtifactSummary `json:"artifact_summary,omitempty"`
 }
 
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
@@ -1741,7 +1742,7 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir, revision)
+	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir, revision, req.ArtifactSummary)
 	if err != nil {
 		slog.Warn("complete task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())

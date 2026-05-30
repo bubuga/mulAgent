@@ -25,7 +25,7 @@ import (
 
 // StepLifecycleHook is called by TaskService when step-linked tasks change state.
 type StepLifecycleHook interface {
-	OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID) error
+	OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID, artifactSummary *TaskArtifactSummary) error
 	OnStepTaskFailed(ctx context.Context, taskID pgtype.UUID, failureReason, errMsg string) error
 }
 
@@ -980,7 +980,7 @@ func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID) (*db.Ag
 // queued chat message could be claimed in the window between the task
 // flipping to 'completed' and chat_session.session_id being refreshed,
 // causing the new task to resume against a stale (or NULL) session.
-func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string, revision *TaskRevisionUpdate) (*db.AgentTaskQueue, error) {
+func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string, revision *TaskRevisionUpdate, artifactSummary *TaskArtifactSummary) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		t, err := qtx.CompleteAgentTask(ctx, db.CompleteAgentTaskParams{
@@ -1164,7 +1164,7 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	// PR7: Step lifecycle hook — advance plan after step completion.
 	if s.StepLifecycle != nil {
-		if err := s.StepLifecycle.OnStepTaskCompleted(ctx, task.ID); err != nil {
+		if err := s.StepLifecycle.OnStepTaskCompleted(ctx, task.ID, artifactSummary); err != nil {
 			slog.Warn("step lifecycle: on completed failed",
 				"task_id", util.UUIDToString(task.ID), "error", err)
 		}

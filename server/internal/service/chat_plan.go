@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -918,7 +919,7 @@ func (s *ChatPlanService) RequestReplan(ctx context.Context, session db.ChatSess
 // ---------------------------------------------------------------------------
 
 // OnStepTaskCompleted advances the plan when a step-linked task completes.
-func (s *ChatPlanService) OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID) error {
+func (s *ChatPlanService) OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID, artifactSummary *TaskArtifactSummary) error {
 	attempt, err := s.queries.GetStepAttemptByTaskID(ctx, taskID)
 	if err != nil {
 		return nil // Not a step-linked task.
@@ -943,6 +944,42 @@ func (s *ChatPlanService) OnStepTaskCompleted(ctx context.Context, taskID pgtype
 		ID: attempt.StepID, Status: "completed",
 	}); err != nil {
 		return fmt.Errorf("update step: %w", err)
+	}
+
+	// PR9: Persist artifact summary to step.
+	if artifactSummary != nil {
+		artBytes, err := json.Marshal(artifactSummary)
+		if err != nil {
+			slog.Warn("marshal artifact summary failed", "error", err)
+		} else {
+			if err := qtx.UpdateStepArtifactSummaryByTaskID(ctx, db.UpdateStepArtifactSummaryByTaskIDParams{
+				TaskID:          taskID,
+				ArtifactSummary: artBytes,
+			}); err != nil {
+				slog.Warn("update step artifact summary failed", "error", err)
+			}
+		}
+	}
+
+	// PR9: Create artifact system message if there are changed files.
+	if artifactSummary != nil && artifactSummary.TotalChangedFiles > 0 {
+		metaBytes, _ := json.Marshal(artifactSummary)
+		msgContent := artifactSummary.Summary
+		if msgContent == "" {
+			msgContent = fmt.Sprintf("Changed %d files", artifactSummary.TotalChangedFiles)
+		}
+		if _, err := qtx.CreateChatSystemMessage(ctx, db.CreateChatSystemMessageParams{
+			ChatSessionID: attempt.ChatSessionID,
+			Content:       msgContent,
+			MessageType:   "artifact_summary",
+			Metadata:      metaBytes,
+		}); err != nil {
+			slog.Warn("create artifact summary message failed",
+				"task_id", util.UUIDToString(taskID),
+				"step_id", util.UUIDToString(attempt.StepID),
+				"error", err,
+			)
+		}
 	}
 
 	// Update step card metadata for completed step.

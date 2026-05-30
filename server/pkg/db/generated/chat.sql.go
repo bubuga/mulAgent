@@ -2242,6 +2242,23 @@ func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusPara
 	return err
 }
 
+const updateStepArtifactSummaryByTaskID = `-- name: UpdateStepArtifactSummaryByTaskID :exec
+UPDATE chat_execution_step
+SET artifact_summary = $2::jsonb,
+    updated_at = now()
+WHERE task_id = $1
+`
+
+type UpdateStepArtifactSummaryByTaskIDParams struct {
+	TaskID          pgtype.UUID `json:"task_id"`
+	ArtifactSummary []byte      `json:"artifact_summary"`
+}
+
+func (q *Queries) UpdateStepArtifactSummaryByTaskID(ctx context.Context, arg UpdateStepArtifactSummaryByTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateStepArtifactSummaryByTaskID, arg.TaskID, arg.ArtifactSummary)
+	return err
+}
+
 const updateStepAttemptRevisionsByTaskID = `-- name: UpdateStepAttemptRevisionsByTaskID :exec
 UPDATE chat_execution_step_attempt
 SET base_revision = COALESCE($2::text, base_revision),

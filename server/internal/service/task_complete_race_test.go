@@ -108,7 +108,7 @@ func TestCompleteTask_AlreadyFinalized(t *testing.T) {
 				Bus:     events.New(),
 			}
 
-			got, err := svc.CompleteTask(context.Background(), taskID, nil, "", "", nil)
+			got, err := svc.CompleteTask(context.Background(), taskID, nil, "", "", nil, nil)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}

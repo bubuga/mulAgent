@@ -548,3 +548,9 @@ SET base_revision = COALESCE(sqlc.narg('base_revision')::text, base_revision),
     result_revision = COALESCE(sqlc.narg('result_revision')::text, result_revision),
     updated_at = now()
 WHERE task_id = $1;
+
+-- name: UpdateStepArtifactSummaryByTaskID :exec
+UPDATE chat_execution_step
+SET artifact_summary = sqlc.arg(artifact_summary)::jsonb,
+    updated_at = now()
+WHERE task_id = $1;
