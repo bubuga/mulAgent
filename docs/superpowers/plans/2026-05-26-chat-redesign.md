@@ -59,6 +59,25 @@ All critical integration gaps identified during local inspection have been fixed
 
 **Implementation note:** v1 is a personal single-user product. The new archive/unarchive APIs (`POST /archive`, `POST /unarchive`) currently sync both `chat_session_user_state.archived_at` AND `chat_session.status` for consistency. When multi-user support is added in the future, new archive APIs should only write `user_state`, and `chat_session.status` should be reserved for legacy Desktop compatibility only.
 
+### PR4-PR9 Completion Summary
+
+All PRs completed and verified:
+
+- ✅ **PR4:** `chat_session_agents` table with composite PK, dual-write on direct chat creation, participant reads in IM list
+- ✅ **PR4.5:** Direct chat thread rendering, message send/cancel, draft key overrides, mark-read on open
+- ✅ **PR5:** Group chat creation wizard, Orchestrator validation, mention routing, message metadata fields, agent identity in UI
+- ✅ **PR6:** Plan CLI (`multica chat plan submit/clear`), `chat_execution_plan`/`chat_execution_step` tables, orchestrator auth, system messages
+- ✅ **PR7:** Step confirmation cards, continue/skip/cancel/retry/replan, serial lock (409 Conflict), step attempt tracking
+- ✅ **PR8:** Group chat session isolation, handoff bundle (messages + plan + steps + revisions), `CaptureRevision`, base/result revision capture
+- ✅ **PR9:** Artifact detection (filepath.Walk + snapshot diff), artifact summary cards, DB persistence, handoff filter, frontend zod parser
+
+**Key architectural decisions across PR4-PR9:**
+- Session isolation: per `(chat_session_id, agent_id)` via `chat_session_agents`, not shared `chat_session.session_id`
+- Handoff: structured bundle with bounded messages (20), plan summary, previous step results, revisions — not raw transcripts
+- Revision tracking: git HEAD + dirty state, best-effort (warnings on failure, not fatal)
+- Artifact detection: snapshot-based (filepath.Walk), not git diff — ignores `.git`, `node_modules`, `.env*`, etc.
+- Serial lock: per chat session via `SELECT ... FOR UPDATE`, not global
+
 ---
 
 ## Browser Console Fetch Verification Standard
@@ -122,24 +141,24 @@ Every API verification should record:
 
 ## PR Order
 
-| PR | Title | Key Deliverables |
-|----|-------|------------------|
-| 1 | Web Chat Route & IM Shell | `/chat` route, two-panel shell, drawer navigation, Web floating chat disabled |
-| 2 | API Schema & Session List | Chat zod schemas with `parseWithFallback`, `view=im` endpoint, React Query session list |
-| 3 | Pin/Archive/Read State | `chat_session_user_state`, backfill, legacy archive transition sync, pin/archive APIs |
-| 4 | Direct Participant Model | `chat_session_agents` table, direct-chat backfill, participant reads, dual-write on create |
-| 4.5 | Direct Chat Thread Rendering | Replace right-panel placeholder, render selected direct-chat messages, send input, pending/cancel, mark read |
-| 5 | Group Chat & Message Model | Group creation wizard, Orchestrator validation, message fields, mention routing |
-| 6 | Plan CLI & Step State | `chat_execution_plan`, `chat_execution_step`, structured Orchestrator plan APIs/CLI |
-| 7 | Step Confirmation & Serial Lock | Step confirmation cards, edit/continue/skip, one running step per chat |
-| 8 | Sandbox & Handoff | Per-participant `session_id`, handoff bundle, revision tracking |
-| 9 | Artifact Cards | Basic artifact summary generation and chat-stream artifact cards |
+| PR | Title | Key Deliverables | Status |
+|----|-------|------------------|--------|
+| 1 | Web Chat Route & IM Shell | `/chat` route, two-panel shell, drawer navigation, Web floating chat disabled | ✅ Completed |
+| 2 | API Schema & Session List | Chat zod schemas with `parseWithFallback`, `view=im` endpoint, React Query session list | ✅ Completed |
+| 3 | Pin/Archive/Read State | `chat_session_user_state`, backfill, legacy archive transition sync, pin/archive APIs | ✅ Completed |
+| 4 | Direct Participant Model | `chat_session_agents` table, direct-chat backfill, participant reads, dual-write on create | ✅ Completed |
+| 4.5 | Direct Chat Thread Rendering | Replace right-panel placeholder, render selected direct-chat messages, send input, pending/cancel, mark read | ✅ Completed |
+| 5 | Group Chat & Message Model | Group creation wizard, Orchestrator validation, message fields, mention routing | ✅ Completed |
+| 6 | Plan CLI & Step State | `chat_execution_plan`, `chat_execution_step`, structured Orchestrator plan APIs/CLI | ✅ Completed |
+| 7 | Step Confirmation & Serial Lock | Step confirmation cards, edit/continue/skip, one running step per chat | ✅ Completed |
+| 8 | Sandbox & Handoff | Per-participant `session_id`, handoff bundle, revision tracking | ✅ Completed |
+| 9 | Artifact Cards | Basic artifact summary generation and chat-stream artifact cards | ✅ Completed |
 
 ---
 
 ## PR 1: Web Chat Route & IM Shell
 
-**Status:** Completed candidate. Validate before relying on it.
+**Status:** ✅ Completed and verified.
 
 **Files:**
 - Create/modify: `apps/web/app/[workspaceSlug]/chat/page.tsx`
@@ -180,7 +199,7 @@ Check:
 
 ## PR 2: API Schema & Session List
 
-**Status:** Completed candidate. Validate carefully because it touches backend, API client compatibility, and the new IM session list.
+**Status:** ✅ Completed and verified.
 
 **Files:**
 - Modify: `packages/core/api/schemas.ts`
@@ -353,7 +372,7 @@ Expected:
 
 ## PR 3: Pin/Archive/Read State
 
-**Status:** Completed candidate, but local inspection shows likely integration gaps. Validate and fix before PR4.
+**Status:** ✅ Completed and verified.
 
 **Files:**
 - Create: `server/migrations/098_chat_user_state.up.sql`
@@ -640,6 +659,8 @@ Expected:
 
 ## PR 4: Direct Participant Model
 
+**Status:** ✅ Completed and verified.
+
 **Goal:** Make participants a first-class backend concept while preserving direct-chat compatibility.
 
 **Files:**
@@ -790,6 +811,8 @@ Expected:
 ---
 
 ## PR 4.5: Direct Chat Thread Rendering
+
+**Status:** ✅ Completed and verified.
 
 **Goal:** Make the Web chat-first page actually usable for existing direct chats before adding group chat.
 
@@ -1098,7 +1121,7 @@ git commit -m "feat(PR4.5): render direct chat thread in web shell"
 
 ## PR 5: Group Chat & Message Model
 
-**Status:** Completed and verified.
+**Status:** ✅ Completed and verified.
 
 **Goal:** Add group chats with manually selected Orchestrator, structured mention routing, message metadata fields, and Web UI for group creation/thread/recipient selection.
 
@@ -1190,11 +1213,23 @@ PR5 was implemented in two layers:
 
 ## PR 6: Plan CLI & Step State
 
-**Status:** Plan ready for implementation.
+**Status:** ✅ Completed and verified.
 
 **Goal:** Let Orchestrator create structured execution plans via one-shot JSON CLI. No natural-language parsing.
 
 **Key design:** Orchestrator calls `multica chat plan submit --session <id>` with complete JSON plan. CLI is stateless. First step enters `awaiting_approval`, PR7 handles confirmation UI and execution.
+
+### PR6 Implementation Summary
+
+- Migration `102_chat_execution_plan`: `chat_execution_plan` and `chat_execution_step` tables with partial unique index for active plan per session
+- `ChatPlanService` with DTOs (`PlanSubmitStep`, `PlanResult`, `StepResult`), depends on `TxStarter`
+- `SubmitPlan` handler: validates orchestrator auth via `resolveActor` + `actorType == "agent"` + `actorID == orchestrator_agent_id`
+- `GetPlan` / `ClearPlan` handlers with `SELECT ... FOR UPDATE` lock
+- `CreateChatSystemMessage` for `plan_created` / `plan_cancelled` system messages
+- `multica chat plan submit / clear` CLI commands in `cmd_chat.go`
+- Daemon: `MULTICA_CHAT_SESSION_ID` env injection, orchestrator prompt with plan CLI, group-chat wording
+- Plan/step event constants in `protocol/events.go`, payload types in `protocol/messages.go`
+- 14 handler tests (`TestChatPlan_*`) + 3 CLI tests (`TestCmdChat_*`)
 
 ### PR6 Final Engineering Boundaries
 
@@ -1261,20 +1296,69 @@ Docker rebuild + browser: Orchestrator receives plan CLI in prompt → submits p
 
 **PR6 does NOT implement:** Step confirmation UI (PR7), step continue/skip/cancel (PR7), step execution (PR7), handoff bundle (PR8).
 
+### PR6 Verification Record
+
+- ✅ `go test ./internal/handler/ -run "TestChatPlan" -v -count=1` — 14 handler tests pass
+- ✅ `go test ./cmd/multica/ -run "TestCmdChat" -v -count=1` — 3 CLI tests pass
+- ✅ `make sqlc` — generation succeeds
+- ✅ Browser: Orchestrator receives plan CLI in prompt → submits plan → first step `awaiting_approval` → system message in chat → plan API returns steps
+
 ---
 
 ## PR 7: Step Confirmation & Serial Lock
 
+**Status:** ✅ Completed and verified.
+
 **Goal:** Require user confirmation before each planned agent step runs.
 
-**Files:**
-- Create: `packages/views/chat/components/step-confirmation-card.tsx`
-- Modify: `packages/views/chat/components/chat-thread.tsx`
-- Modify: `packages/core/chat/mutations.ts`
-- Modify: `server/internal/handler/chat.go`
-- Modify: `server/pkg/db/queries/chat.sql`
+### PR7 Implementation Summary
 
-### Required Behavior
+- `step-confirmation-card.tsx`: renders awaiting_approval/running/completed/failed/skipped states with continue/skip/cancel/retry/replan buttons
+- `useContinueStep`, `useSkipStep`, `useCancelStep`, `useRetryStep`, `useRequestReplan` mutations
+- Serial lock via `SELECT ... FOR UPDATE` on `chat_session` row, check no step is queued/dispatched/running
+- Continue step creates agent task via `EnqueueChatTaskForAgent`, stores `task_id` on step
+- Step confirmation system messages with `message_type='step_confirmation'`
+- Step attempt tracking: `chat_execution_step_attempt` table with attempt_number
+- 409 Conflict handling: UI refetches plan/steps on conflict
+- Chat input draft key overrides for Web main chat independence from Desktop floating chat
+- `chat_execution_step.task_id` unique index for step↔task mapping
+- `step-confirmation-card.tsx` uses `activePlanOptions(sessionId)` for real-time state, falls back to `message.metadata`
+
+### Files Changed
+
+| File | Action |
+|------|--------|
+| `server/migrations/103_step_attempt.up.sql` | Create — `chat_execution_step_attempt` table |
+| `server/migrations/103_step_attempt.down.sql` | Create |
+| `server/pkg/db/queries/chat.sql` | Modify — step attempt queries, task_id index |
+| `server/pkg/db/generated/*.go` | Regenerate |
+| `server/internal/handler/chat.go` | Modify — ContinueStep, SkipStep, CancelStep, RetryStep, RequestReplan handlers |
+| `server/internal/handler/handler.go` | Modify — TaskService field |
+| `server/internal/handler/daemon.go` | Modify — claim response extensions |
+| `server/internal/handler/agent.go` | Modify — handoff bundle types |
+| `server/internal/handler/chat_test.go` | Modify — step confirmation tests |
+| `server/internal/service/chat_plan.go` | Modify — step attempt lifecycle |
+| `server/internal/service/task.go` | Modify — `StepLifecycleHook` interface, `EnqueueChatTaskForAgent` |
+| `server/internal/daemon/types.go` | Modify — Task struct extensions |
+| `server/internal/daemon/daemon.go` | Modify — env injection |
+| `server/internal/daemon/execenv/execenv.go` | Modify — TaskContextForEnv |
+| `server/internal/daemon/prompt.go` | Modify — orchestrator prompt |
+| `server/cmd/server/router.go` | Modify — step routes |
+| `server/pkg/protocol/events.go` | Modify — step event constants |
+| `packages/views/chat/components/step-confirmation-card.tsx` | Create |
+| `packages/views/chat/components/chat-message-list.tsx` | Modify — step_confirmation dispatch |
+| `packages/views/chat/components/chat-input.tsx` | Modify — draft key overrides |
+| `packages/views/chat/components/chat-main-area.tsx` | Modify — group thread routing |
+| `packages/views/chat/components/chat-shell.tsx` | Modify — + button wiring |
+| `packages/core/chat/mutations.ts` | Modify — step mutations |
+| `packages/core/chat/queries.ts` | Modify — activePlanOptions |
+| `packages/core/types/chat.ts` | Modify — StepAttempt, ExecutionStep types |
+| `packages/core/types/events.ts` | Modify — step event payload types |
+| `packages/core/realtime/use-realtime-sync.ts` | Modify — step event handlers |
+| `packages/views/chat/lib/mention-routing.ts` | Create — mention routing logic |
+| `packages/views/editor/extensions/mention-suggestion.tsx` | Create — @mention autocomplete |
+
+### PR7 Engineering Boundaries
 
 - [ ] Step confirmation card renders in the chat stream after Orchestrator output.
 - [ ] User can continue a step.
@@ -1350,18 +1434,65 @@ Expected:
 - Status `409` when another step in the same chat is `queued`, `dispatched`, or `running`.
 - No second task is created.
 
+### PR7 Verification Record
+
+- ✅ `go test ./internal/handler/ -v -count=1` — chat handler tests pass
+- ✅ `pnpm typecheck` — 6 packages pass
+- ✅ `pnpm test` — tests pass
+- ✅ Browser: Step confirmation card renders → continue → step runs → completed card → next step card appears
+- ✅ Browser: Skip step → step skipped → next step card appears
+- ✅ Browser: Serial lock → second continue returns 409
+
 ---
 
 ## PR 8: Sandbox & Handoff
 
+**Status:** ✅ Completed and verified.
+
 **Goal:** Keep each participant's agent memory isolated while sharing enough explicit group context.
 
-**Files:**
-- Modify: `server/internal/handler/task_lifecycle.go`
-- Modify: `server/internal/handler/daemon.go`
-- Modify: `server/pkg/db/queries/chat.sql`
+### PR8 Implementation Summary
 
-### Required Behavior
+- Group chat session isolation: `GetChatSessionAgentState` + `GetLastChatAgentTaskSession` per `(chat_session_id, agent_id)`, never shared `chat_session.session_id`
+- Handoff bundle: recent 20 messages, plan steps, previous step results, artifact summaries (PR9 schema), revisions
+- `CaptureRevision(ctx, workDir)` — git HEAD + dirty state via `git rev-parse` + `git status --porcelain=v1`
+- Base revision captured after env prepare (synchronous, 5s timeout), result revision captured in `reportTaskResult`
+- Daemon client extended: `PinTaskSession`, `CompleteTask`, `FailTask` with revision + artifact params
+- `TaskRevisionUpdate` assembly from request fields, COALESCE-based SQL preserves existing DB values
+- `UpsertChatSessionAgentSession` auto-detects role via `orchestrator_agent_id` check
+- Handoff builder: critical failure → 500; non-critical → warnings + continue
+- Multi-level bundle truncation: messages → artifacts → previous steps → plan prompts
+- `revisionWarnings` helper collects non-empty Warning fields from RevisionInfo pointers
+- `buildStepResultSummary` priority: assistant_reply → failure_reason+error → status
+- Chat list fix: `useWorkspaceId()` instead of `useRequiredWorkspaceSlug()` for React Query key match
+- 16 handler tests (`TestHandoff_*`, `TestPinTaskSession_*`, `TestCompleteStepTask_*`) + 4 client tests
+
+### Files Changed
+
+| File | Action |
+|------|--------|
+| `server/migrations/104_step_attempt_revision.up.sql` | Create — revision columns on `chat_execution_step_attempt` |
+| `server/migrations/104_step_attempt_revision.down.sql` | Create |
+| `server/pkg/db/queries/chat.sql` | Modify — 8 new queries for session isolation, handoff, revisions |
+| `server/pkg/db/generated/*.go` | Regenerate |
+| `server/internal/handler/task_lifecycle.go` | Modify — PinTaskSession with transaction, participant UPSERT |
+| `server/internal/handler/daemon.go` | Modify — group chat session isolation, handoff bundle, revision fields |
+| `server/internal/handler/agent.go` | Modify — handoff bundle types |
+| `server/internal/handler/chat.go` | Modify — `UserID` fix, `LastMessagePreview` type assertion |
+| `server/internal/handler/chat_handoff.go` | Create — `buildHandoffBundle`, `handoffQueries` interface |
+| `server/internal/handler/chat_handoff_test.go` | Create — 16 handler tests |
+| `server/internal/service/task.go` | Modify — `CompleteTask`/`FailTask` with revision, participant UPSERT |
+| `server/internal/service/task_revision.go` | Create — `TaskRevisionInfo`, `TaskRevisionUpdate` types |
+| `server/internal/service/task_complete_race_test.go` | Modify — revision param |
+| `server/internal/daemon/client.go` | Modify — `addRevisionFields`, extended `PinTaskSession`/`CompleteTask`/`FailTask` |
+| `server/internal/daemon/client_test.go` | Modify — 4 revision client tests |
+| `server/internal/daemon/daemon.go` | Modify — base/result revision capture, `revisionWarnings` helper |
+| `server/internal/daemon/prompt.go` | Modify — `buildStepPromptWithHandoff` |
+| `server/internal/daemon/revision.go` | Create — `CaptureRevision`, `runGit`, `extractDirtyPaths` |
+| `server/internal/daemon/types.go` | Modify — `RevisionInfo`, `ChatHandoffBundle` mirror types |
+| `packages/views/chat/components/chat-session-list.tsx` | Modify — `useWorkspaceId()` fix |
+
+### PR8 Engineering Boundaries
 
 - [ ] On task completion, update that participant's `chat_session_agents.session_id`.
 - [ ] Direct legacy `chat_session.session_id`, `runtime_id`, and `work_dir` are still updated for compatibility.
@@ -1428,17 +1559,68 @@ Expected:
 - Other participants' `session_id` values do not change.
 - Step stores `result_revision` if available.
 
+### PR8 Verification Record
+
+- ✅ `go test ./internal/handler/ -run "TestHandoff_|TestPinTaskSession_|TestCompleteStepTask_" -v -count=1` — 16 handler tests pass
+- ✅ `go test ./internal/daemon/ -run "TestClient_.*Revision" -v -count=1` — 4 client tests pass
+- ✅ `go test ./internal/daemon/ -run "TestCaptureRevision|TestBuildStepPrompt" -v -count=1` — revision + prompt tests pass
+- ✅ `make sqlc` — generation succeeds
+- ✅ Browser: Group chat 2-step plan → step1 completes → step2 handoff includes step1 context → session_id isolation verified
+- ✅ DB: `chat_execution_step_attempt` has `base_revision` and `result_revision` JSONB populated
+- ✅ Chat list auto-refreshes after session creation (React Query key fix)
+
 ---
 
 ## PR 9: Artifact Cards
 
+**Status:** ✅ Completed and verified.
+
 **Goal:** Show basic agent-produced artifacts inline in the chat stream.
 
-**Files:**
-- Create: `packages/views/chat/components/artifact-summary-card.tsx`
-- Modify: `packages/views/chat/components/chat-thread.tsx`
-- Modify: `server/internal/handler/task_lifecycle.go`
-- Modify: `server/pkg/db/queries/chat.sql`
+### PR9 Implementation Summary
+
+- Daemon: `CaptureArtifactSnapshot` — `filepath.Walk` with ignore rules (`.git`, `node_modules`, `.next`, `.turbo`, `dist`, `build`, `coverage`, `.env*`), returns `map[string]artifactFileSnapshot`
+- Daemon: `BuildArtifactSummary` — compares before/after snapshots, detects added/modified by size+modtime, truncates at 20 files, sorts by path
+- Daemon lifecycle: baseline snapshot after `InjectRuntimeConfig` (before `BuildPrompt`), result snapshot after cancellation check (before `reportTaskResult`)
+- `attachArtifactSummary` helper: baseline failure safety (empty baseline + warnings → "no changes"), merges warnings, always attaches for completed execution steps
+- `TaskResult` carries `ArtifactBaseline` + `ArtifactBaselineWarnings` (json:"-", internal transport only)
+- Client: `CompleteTask` extended with `artifactSummary *ArtifactSummary` param, included in request body when non-nil
+- Server: `TaskArtifactSummary` mirror types in `service/task_artifact.go`
+- Server: `StepLifecycleHook.OnStepTaskCompleted` extended with `artifactSummary *TaskArtifactSummary`
+- Server: `OnStepTaskCompleted` in `chat_plan.go` persists to `chat_execution_step.artifact_summary` + creates `artifact_summary` system message via `CreateChatSystemMessage`
+- Handoff: filters by `total_changed_files > 0` (excludes empty summaries from handoff bundle)
+- Frontend: `ArtifactSummaryCard` with zod parser (`parseArtifactSummary` returns `{artifact, valid}`), malformed metadata fallback, three-way `change_type` icon (added/modified/unknown)
+- Locale keys: en + zh-Hans for `artifact_summary.title`, `.files`, `.added`, `.modified`, `.truncated`, `.unavailable`
+- Fixes broken PR8 tests: `autopilot_listeners_test.go`, `quick_create_subscriber_test.go` (missing revision + artifact params)
+- 8 daemon tests + 4 handler tests + 2 client tests
+
+### Files Changed
+
+| File | Action |
+|------|--------|
+| `server/internal/daemon/types.go` | Modify — `ArtifactSummary`, `ArtifactChangedFile`, `ArtifactDiffStat` types; `TaskResult` fields |
+| `server/internal/daemon/artifacts.go` | Create — `CaptureArtifactSnapshot`, `BuildArtifactSummary` |
+| `server/internal/daemon/artifact_test.go` | Create — 8 snapshot/summary tests |
+| `server/internal/daemon/client.go` | Modify — `CompleteTask` with `artifactSummary` param |
+| `server/internal/daemon/client_test.go` | Modify — 2 artifact client tests + fix PR8 test arg count |
+| `server/internal/daemon/daemon.go` | Modify — `attachArtifactSummary` helper, baseline capture, result attachment |
+| `server/internal/service/task_artifact.go` | Create — `TaskArtifactSummary` mirror types |
+| `server/internal/service/task.go` | Modify — `CompleteTask` + `StepLifecycleHook` with artifact |
+| `server/internal/service/chat_plan.go` | Modify — persist artifact summary + create artifact message |
+| `server/internal/handler/daemon.go` | Modify — accept `artifact_summary` in `TaskCompleteRequest` |
+| `server/internal/handler/chat_handoff.go` | Modify — filter by `total_changed_files > 0` |
+| `server/internal/handler/chat_handoff_test.go` | Modify — update old test to PR9 v1 schema + new tests |
+| `server/cmd/server/autopilot_listeners_test.go` | Fix — missing revision + artifact params |
+| `server/cmd/server/quick_create_subscriber_test.go` | Fix — missing revision + artifact params |
+| `server/internal/service/task_complete_race_test.go` | Fix — add nil artifact param |
+| `server/pkg/db/queries/chat.sql` | Modify — `UpdateStepArtifactSummaryByTaskID` query |
+| `server/pkg/db/generated/*.go` | Regenerate |
+| `packages/core/chat/artifacts.ts` | Create — zod schema + `parseArtifactSummary` |
+| `packages/core/chat/index.ts` | Modify — re-export artifact types |
+| `packages/views/chat/components/artifact-summary-card.tsx` | Create — card component |
+| `packages/views/chat/components/chat-message-list.tsx` | Modify — `artifact_summary` dispatch |
+| `packages/views/locales/en/chat.json` | Modify — `artifact_summary.*` keys |
+| `packages/views/locales/zh-Hans/chat.json` | Modify — `artifact_summary.*` keys |
 
 ### Required Behavior
 
@@ -1504,6 +1686,19 @@ Expected:
 - Chat thread does not crash.
 - Card falls back to a generic artifact/error state.
 - Normal text messages still render.
+
+### PR9 Verification Record
+
+- ✅ `go test ./internal/daemon/ -run "TestCaptureArtifact|TestBuildArtifact|TestClient_CompleteTask.*Artifact" -v -count=1` — 8 daemon + 2 client tests pass
+- ✅ `go test ./internal/handler/ -run "TestCompleteStepTask_.*Artifact|TestHandoff_Artifact" -v -count=1` — 4 handler tests pass
+- ✅ `go build ./...` — all packages compile
+- ✅ `go test ./cmd/server -run '^$' -count=0` — test files compile (no broken PR8 tests)
+- ✅ Browser E2E: Step 1 creates `hello.py` → artifact card "产物" → "变更了 1 个文件" → "1 新增" → `hello.py` 15 B
+- ✅ Browser E2E: Step 2 modifies `hello.py` → artifact card "产物" → "变更了 1 个文件" → "1 修改" → `hello.py` 30 B
+- ✅ DB: `chat_execution_step.artifact_summary` has PR9 v1 schema (`version`, `changed_files`, `diff_stat`)
+- ✅ DB: `chat_message` has 2 `artifact_summary` records with correct content and metadata
+- ✅ Pre-PR9 steps still have `{}` (default JSONB)
+- ✅ Relative paths (no absolute Windows paths in metadata)
 
 ---
 
