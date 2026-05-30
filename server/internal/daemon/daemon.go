@@ -2144,6 +2144,9 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		return
 	}
 
+	// PR9: Attach artifact summary to result if applicable.
+	attachArtifactSummary(&result, task)
+
 	d.reportTaskResult(ctx, task.ID, result, taskLog)
 
 	// Write GC metadata after the task finishes so the periodic GC loop
@@ -2180,6 +2183,41 @@ func revisionWarnings(revisions ...*RevisionInfo) []string {
 		}
 	}
 	return warnings
+}
+
+// attachArtifactSummary captures a workspace snapshot diff and attaches the
+// result to TaskResult.ArtifactSummary. Only applies to completed execution
+// steps with a valid workDir.
+func attachArtifactSummary(result *TaskResult, task Task) {
+	if result.Status != "completed" || !task.IsExecutionStep || result.WorkDir == "" {
+		return
+	}
+
+	// Baseline failed (empty map + non-empty warnings) — report "no changes"
+	// rather than falsely detecting every file as "added".
+	if len(result.ArtifactBaselineWarnings) > 0 && len(result.ArtifactBaseline) == 0 {
+		result.ArtifactSummary = &ArtifactSummary{
+			Version:           1,
+			Summary:           "No file changes detected",
+			TotalChangedFiles: 0,
+			Warnings:          result.ArtifactBaselineWarnings,
+		}
+		return
+	}
+
+	if result.ArtifactBaseline == nil {
+		return
+	}
+
+	afterSnap, snapWarns := CaptureArtifactSnapshot(result.WorkDir)
+	// Merge baseline + after warnings so none are lost.
+	warnings := append([]string{}, result.ArtifactBaselineWarnings...)
+	warnings = append(warnings, snapWarns...)
+	summary := BuildArtifactSummary(result.ArtifactBaseline, afterSnap, warnings)
+	// Always attach — even if total_changed_files=0. The server stores the
+	// empty summary in DB (non-{} JSON) and only creates the chat card when
+	// total_changed_files > 0.
+	result.ArtifactSummary = &summary
 }
 
 func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result TaskResult, taskLog *slog.Logger) {
@@ -2412,6 +2450,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		if err != nil {
 			taskLog.Debug("pin base revision failed", "error", err)
 		}
+	}
+
+	// PR9: Capture artifact baseline snapshot for execution steps.
+	var artifactBaseline map[string]artifactFileSnapshot
+	var artifactBaselineWarnings []string
+	if task.IsExecutionStep && env.WorkDir != "" {
+		artifactBaseline, artifactBaselineWarnings = CaptureArtifactSnapshot(env.WorkDir)
 	}
 
 	prompt := BuildPrompt(task, provider)
@@ -2676,12 +2721,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			// a normal completion so the task is not incorrectly marked as
 			// blocked.
 			return TaskResult{
-				Status:    "completed",
-				Comment:   "",
-				SessionID: result.SessionID,
-				WorkDir:   env.WorkDir,
-				EnvRoot:   env.RootDir,
-				Usage:     usageEntries,
+				Status:                   "completed",
+				Comment:                  "",
+				SessionID:                result.SessionID,
+				WorkDir:                  env.WorkDir,
+				EnvRoot:                  env.RootDir,
+				Usage:                    usageEntries,
+				ArtifactBaseline:         artifactBaseline,
+				ArtifactBaselineWarnings: artifactBaselineWarnings,
 			}, nil
 		}
 		// Detect "poisoned" terminal output: the agent didn't reach a real
@@ -2706,12 +2753,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}, nil
 		}
 		return TaskResult{
-			Status:    "completed",
-			Comment:   result.Output,
-			SessionID: result.SessionID,
-			WorkDir:   env.WorkDir,
-			EnvRoot:   env.RootDir,
-			Usage:     usageEntries,
+			Status:                   "completed",
+			Comment:                  result.Output,
+			SessionID:                result.SessionID,
+			WorkDir:                  env.WorkDir,
+			EnvRoot:                  env.RootDir,
+			Usage:                    usageEntries,
+			ArtifactBaseline:         artifactBaseline,
+			ArtifactBaselineWarnings: artifactBaselineWarnings,
 		}, nil
 	case "timeout":
 		// Surface session_id/work_dir so the chat resume pointer is kept
