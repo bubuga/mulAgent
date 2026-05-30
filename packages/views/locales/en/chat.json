@@ -88,6 +88,14 @@
     "attempts_one": "{{count}} attempt",
     "attempts_other": "{{count}} attempts"
   },
+  "artifact_summary": {
+    "title": "Artifacts",
+    "files": "{{count}} files changed",
+    "added": "added",
+    "modified": "modified",
+    "truncated": "Showing first 20 of {{total}} files",
+    "unavailable": "Artifact summary unavailable"
+  },
   "session_history": {
     "untitled": "Untitled",
     "time": {

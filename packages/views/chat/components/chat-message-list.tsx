@@ -25,6 +25,7 @@ import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/que
 import { Markdown } from "@multica/views/common/markdown";
 import { copyMarkdown } from "../../editor";
 import { StepConfirmationCard } from "./step-confirmation-card";
+import { ArtifactSummaryCard } from "./artifact-summary-card";
 import { AttachmentList } from "../../issues/components/comment-card";
 import type { AgentAvailability } from "@multica/core/agents";
 import type { ChatMessage, ChatPendingTask, TaskMessagePayload, TaskFailureReason } from "@multica/core/types";
@@ -186,6 +187,10 @@ function MessageBubble({
     // PR7: Step confirmation cards for step lifecycle messages.
     if (message.message_type === "step_confirmation" && sessionId) {
       return <StepConfirmationCard message={message} sessionId={sessionId} />;
+    }
+    // PR9: Artifact summary cards for file change detection.
+    if (message.message_type === "artifact_summary") {
+      return <ArtifactSummaryCard message={message} />;
     }
     return (
       <div className="flex justify-center">

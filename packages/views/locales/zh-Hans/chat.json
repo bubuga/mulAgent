@@ -83,6 +83,14 @@
     "request_replan": "请求重新规划",
     "attempts_other": "{{count}} 次尝试"
   },
+  "artifact_summary": {
+    "title": "产物",
+    "files": "变更了 {{count}} 个文件",
+    "added": "新增",
+    "modified": "修改",
+    "truncated": "显示前 20 个，共 {{total}} 个文件",
+    "unavailable": "产物摘要不可用"
+  },
   "session_history": {
     "untitled": "无标题",
     "time": {
