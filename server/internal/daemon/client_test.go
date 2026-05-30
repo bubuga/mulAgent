@@ -145,7 +145,7 @@ func TestClient_CompleteTaskSendsResultRevision(t *testing.T) {
 	c.SetToken("tok")
 
 	resultRev := &RevisionInfo{Kind: "git", Head: "def456", DirtyCount: 5}
-	err := c.CompleteTask(context.Background(), "task-1", "done", "", "sess-1", "/work", nil, resultRev, nil)
+	err := c.CompleteTask(context.Background(), "task-1", "done", "", "sess-1", "/work", nil, resultRev, nil, nil)
 	if err != nil {
 		t.Fatalf("CompleteTask: %v", err)
 	}
@@ -212,5 +212,66 @@ func TestClient_PinTaskSessionSkipsWhenAllEmpty(t *testing.T) {
 	}
 	if called {
 		t.Error("expected no HTTP call when all params are empty")
+	}
+}
+
+func TestClient_CompleteTaskSendsArtifactSummary(t *testing.T) {
+	var captured map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&captured)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "completed"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.SetToken("tok")
+
+	artifact := &ArtifactSummary{
+		Version:           1,
+		Summary:           "Changed 1 file",
+		ChangedFiles:      []ArtifactChangedFile{{Path: "hello.py", ChangeType: "added", SizeBytes: 123}},
+		TotalChangedFiles: 1,
+		DiffStat:          ArtifactDiffStat{Added: 1},
+	}
+	err := c.CompleteTask(context.Background(), "task-1", "done", "", "sess-1", "/work", nil, nil, nil, artifact)
+	if err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+
+	if captured["artifact_summary"] == nil {
+		t.Fatal("expected artifact_summary in request body")
+	}
+	art, ok := captured["artifact_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected artifact_summary to be a map, got %T", captured["artifact_summary"])
+	}
+	if art["version"].(float64) != 1 {
+		t.Errorf("expected version=1, got %v", art["version"])
+	}
+	if art["summary"].(string) != "Changed 1 file" {
+		t.Errorf("expected summary='Changed 1 file', got %v", art["summary"])
+	}
+}
+
+func TestClient_CompleteTaskOmitsArtifactSummaryWhenNil(t *testing.T) {
+	var captured map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&captured)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "completed"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.SetToken("tok")
+
+	err := c.CompleteTask(context.Background(), "task-1", "done", "", "", "", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+
+	if _, ok := captured["artifact_summary"]; ok {
+		t.Error("expected artifact_summary to be absent when nil")
 	}
 }

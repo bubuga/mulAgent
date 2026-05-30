@@ -195,7 +195,7 @@ func addRevisionFields(body map[string]any, baseRevision, resultRevision *Revisi
 	}
 }
 
-func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, baseRevision, resultRevision *RevisionInfo, warnings []string) error {
+func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, baseRevision, resultRevision *RevisionInfo, warnings []string, artifactSummary *ArtifactSummary) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -207,6 +207,9 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 		body["work_dir"] = workDir
 	}
 	addRevisionFields(body, baseRevision, resultRevision, warnings)
+	if artifactSummary != nil {
+		body["artifact_summary"] = artifactSummary
+	}
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/complete", taskID), body, nil)
 }
 
