@@ -1008,3 +1008,158 @@ func TestListChatSessionsForIMV2_EmptySessionWithoutMessages(t *testing.T) {
 		t.Fatal("empty session not found in list")
 	}
 }
+
+func TestCompleteStepTask_PersistsArtifactSummary(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	mimo1ID := createHandlerTestAgent(t, "PR9-Mimo1-Art", []byte("[]"))
+	mimo2ID := createHandlerTestAgent(t, "PR9-Mimo2-Art", []byte("[]"))
+	sessionID := createPR8GroupChat(t, mimo2ID, []string{mimo1ID})
+	planID := createPR8Plan(t, sessionID, mimo2ID)
+	taskID, _, _ := createPR8StepTask(t, mimo1ID, sessionID, planID, 1, "Create hello.py")
+
+	testPool.Exec(context.Background(), `UPDATE agent_task_queue SET status='running' WHERE id=$1`, taskID)
+
+	artifactJSON := `{"version":1,"summary":"Changed 1 file","changed_files":[{"path":"hello.py","change_type":"added","size_bytes":123}],"total_changed_files":1,"truncated":false,"diff_stat":{"added":1,"modified":0},"warnings":[]}`
+	completeBody := map[string]any{
+		"output":           "done",
+		"session_id":       "mimo1-session",
+		"work_dir":         "/work",
+		"artifact_summary": json.RawMessage(artifactJSON),
+	}
+	body, _ := json.Marshal(completeBody)
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/complete", nil, testWorkspaceID, "test-daemon")
+	req.Body = nopReadCloser(body)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("taskId", taskID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	testHandler.CompleteTask(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify step artifact_summary stored in DB.
+	var artBytes []byte
+	testPool.QueryRow(context.Background(),
+		`SELECT artifact_summary FROM chat_execution_step WHERE task_id = $1`, taskID,
+	).Scan(&artBytes)
+	if len(artBytes) == 0 {
+		t.Fatal("expected non-empty artifact_summary in chat_execution_step")
+	}
+	var art struct {
+		TotalChangedFiles int    `json:"total_changed_files"`
+		Summary           string `json:"summary"`
+	}
+	if err := json.Unmarshal(artBytes, &art); err != nil {
+		t.Fatalf("unmarshal artifact_summary: %v", err)
+	}
+	if art.TotalChangedFiles != 1 {
+		t.Errorf("expected total_changed_files=1, got %d", art.TotalChangedFiles)
+	}
+
+	// Verify artifact_summary system message created.
+	var msgCount int
+	testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM chat_message WHERE chat_session_id = $1 AND message_type = 'artifact_summary'`,
+		sessionID,
+	).Scan(&msgCount)
+	if msgCount != 1 {
+		t.Errorf("expected 1 artifact_summary message, got %d", msgCount)
+	}
+}
+
+func TestCompleteStepTask_NoArtifactMessageWhenNoChanges(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	mimo1ID := createHandlerTestAgent(t, "PR9-Mimo1-NoArt", []byte("[]"))
+	mimo2ID := createHandlerTestAgent(t, "PR9-Mimo2-NoArt", []byte("[]"))
+	sessionID := createPR8GroupChat(t, mimo2ID, []string{mimo1ID})
+	planID := createPR8Plan(t, sessionID, mimo2ID)
+	taskID, _, _ := createPR8StepTask(t, mimo1ID, sessionID, planID, 1, "Read hello.py")
+	testPool.Exec(context.Background(), `UPDATE agent_task_queue SET status='running' WHERE id=$1`, taskID)
+
+	emptyArtifact := `{"version":1,"summary":"No file changes detected","changed_files":[],"total_changed_files":0,"truncated":false,"diff_stat":{"added":0,"modified":0}}`
+	completeBody := map[string]any{
+		"output":           "done",
+		"session_id":       "mimo1-session",
+		"work_dir":         "/work",
+		"artifact_summary": json.RawMessage(emptyArtifact),
+	}
+	body, _ := json.Marshal(completeBody)
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/complete", nil, testWorkspaceID, "test-daemon")
+	req.Body = nopReadCloser(body)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("taskId", taskID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	testHandler.CompleteTask(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// DB stores the empty summary (non-{} JSON).
+	var artBytes []byte
+	testPool.QueryRow(context.Background(),
+		`SELECT artifact_summary FROM chat_execution_step WHERE task_id = $1`, taskID,
+	).Scan(&artBytes)
+	if string(artBytes) == "{}" || len(artBytes) == 0 {
+		t.Errorf("expected non-default artifact_summary, got %q", string(artBytes))
+	}
+
+	// No artifact_summary message created (total_changed_files=0).
+	var msgCount int
+	testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM chat_message WHERE chat_session_id = $1 AND message_type = 'artifact_summary'`,
+		sessionID,
+	).Scan(&msgCount)
+	if msgCount != 0 {
+		t.Errorf("expected 0 artifact_summary messages, got %d", msgCount)
+	}
+}
+
+func TestHandoff_ArtifactSummariesUsesStructuredSchema(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	mimo1ID := createHandlerTestAgent(t, "PR9-Mimo1-HO", []byte("[]"))
+	mimo2ID := createHandlerTestAgent(t, "PR9-Mimo2-HO", []byte("[]"))
+	sessionID := createPR8GroupChat(t, mimo2ID, []string{mimo1ID})
+	planID := createPR8Plan(t, sessionID, mimo2ID)
+	// Step 1 (completed with artifact).
+	task1ID, step1ID, _ := createPR8StepTask(t, mimo1ID, sessionID, planID, 1, "Create hello.py")
+	testPool.Exec(context.Background(), `UPDATE agent_task_queue SET status='dispatched' WHERE id=$1`, task1ID)
+	artifactJSON := `{"version":1,"summary":"Changed 1 file","changed_files":[{"path":"hello.py","change_type":"added","size_bytes":50}],"total_changed_files":1,"truncated":false,"diff_stat":{"added":1,"modified":0}}`
+	testPool.Exec(context.Background(),
+		`UPDATE chat_execution_step SET status='completed', artifact_summary=$2 WHERE id=$1`,
+		step1ID, artifactJSON,
+	)
+	// Step 2 (stays queued — claim will pick it up).
+	createPR8StepTask(t, mimo2ID, sessionID, planID, 2, "Modify hello.py")
+
+	// Claim step2 → handoff bundle should include step1 artifact.
+	runtimeID := handlerTestRuntimeID(t)
+	resp := claimAsRuntimePR8(t, runtimeID)
+	if resp.Task.HandoffBundle == nil {
+		t.Fatal("expected handoff bundle")
+	}
+	if len(resp.Task.HandoffBundle.ArtifactSummaries) != 1 {
+		t.Fatalf("expected 1 artifact summary, got %d", len(resp.Task.HandoffBundle.ArtifactSummaries))
+	}
+	art := resp.Task.HandoffBundle.ArtifactSummaries[0]
+	if art.StepSequence != 1 {
+		t.Errorf("expected step_sequence=1, got %d", art.StepSequence)
+	}
+	// Summary should be valid JSON with total_changed_files > 0.
+	var parsed struct {
+		TotalChangedFiles int `json:"total_changed_files"`
+	}
+	if err := json.Unmarshal([]byte(art.Summary), &parsed); err != nil {
+		t.Fatalf("summary is not valid JSON: %v", err)
+	}
+	if parsed.TotalChangedFiles != 1 {
+		t.Errorf("expected total_changed_files=1, got %d", parsed.TotalChangedFiles)
+	}
+}

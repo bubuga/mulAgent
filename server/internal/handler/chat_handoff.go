@@ -114,9 +114,13 @@ func buildHandoffBundle(ctx context.Context, q handoffQueries, taskID pgtype.UUI
 			}
 
 			// D13: artifact summaries from completed previous steps
+			// PR9: filter by total_changed_files > 0 to exclude empty summaries.
 			if s.Sequence < hctx.Sequence && s.ArtifactSummary != nil {
-				var raw json.RawMessage
-				if json.Unmarshal(s.ArtifactSummary, &raw) == nil && len(raw) > 2 { // not just "{}"
+				var art struct {
+					TotalChangedFiles int `json:"total_changed_files"`
+				}
+				if json.Unmarshal(s.ArtifactSummary, &art) == nil && art.TotalChangedFiles > 0 {
+					raw := json.RawMessage(s.ArtifactSummary)
 					bundle.ArtifactSummaries = append(bundle.ArtifactSummaries, HandoffArtifactSummary{
 						StepSequence: s.Sequence,
 						Summary:      truncateString(string(raw), maxMessageContentChars),
