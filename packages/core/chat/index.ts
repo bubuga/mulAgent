@@ -1,6 +1,9 @@
 export { createChatStore, CHAT_MIN_W, CHAT_MIN_H, CHAT_DEFAULT_W, CHAT_DEFAULT_H, DRAFT_NEW_SESSION } from "./store";
 export type { ChatStoreOptions, ChatState, ChatTimelineItem, ContextAnchor } from "./store";
 
+export { parseArtifactSummary, ArtifactSummarySchema } from "./artifacts";
+export type { ArtifactSummary } from "./artifacts";
+
 import type { createChatStore as CreateChatStoreFn } from "./store";
 
 type ChatStoreInstance = ReturnType<typeof CreateChatStoreFn>;
