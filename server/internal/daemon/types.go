@@ -75,6 +75,7 @@ type Task struct {
 	IsOrchestrator    bool                   `json:"is_orchestrator,omitempty"`
 	IsExecutionStep   bool                   `json:"is_execution_step,omitempty"`
 	GroupParticipants []GroupParticipantMeta `json:"group_participants,omitempty"`
+	HandoffBundle     *ChatHandoffBundle     `json:"handoff_bundle,omitempty"`
 }
 
 // GroupParticipantMeta describes a participant in a group chat for orchestrator context.
@@ -93,6 +94,74 @@ type ChatAttachmentMeta struct {
 	ID          string `json:"id"`
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type,omitempty"`
+}
+
+// RevisionInfo is the daemon-side wire type for revision data.
+// Matches service.TaskRevisionInfo shape; kept separate to avoid cross-package import.
+type RevisionInfo struct {
+	Kind       string   `json:"kind"`
+	Head       string   `json:"head,omitempty"`
+	DirtyHash  string   `json:"dirty_hash,omitempty"`
+	DirtyCount int      `json:"dirty_count,omitempty"`
+	DirtyPaths []string `json:"dirty_paths,omitempty"`
+	Warning    string   `json:"warning,omitempty"`
+}
+
+// ChatHandoffBundle is the daemon-side mirror of handler.ChatHandoffBundleResponse.
+type ChatHandoffBundle struct {
+	Version           int                       `json:"version"`
+	ChatSessionID     string                    `json:"chat_session_id"`
+	PlanID            string                    `json:"plan_id"`
+	StepID            string                    `json:"step_id"`
+	AttemptID         string                    `json:"attempt_id"`
+	AttemptNumber     int32                     `json:"attempt_number"`
+	Sequence          int32                     `json:"sequence"`
+	AgentID           string                    `json:"agent_id"`
+	AgentName         string                    `json:"agent_name"`
+	ApprovedPrompt    string                    `json:"approved_prompt"`
+	RecentMessages    []HandoffMessage          `json:"recent_messages"`
+	PlanSteps         []HandoffPlanStep         `json:"plan_steps"`
+	PreviousSteps     []HandoffPreviousStep     `json:"previous_steps"`
+	ArtifactSummaries []HandoffArtifactSummary  `json:"artifact_summaries,omitempty"`
+	Revisions         HandoffRevisions          `json:"revisions"`
+	Truncated         bool                      `json:"truncated,omitempty"`
+	Warnings          []string                  `json:"warnings,omitempty"`
+}
+
+type HandoffMessage struct {
+	Role        string `json:"role"`
+	AgentID     string `json:"agent_id,omitempty"`
+	Content     string `json:"content"`
+	MessageType string `json:"message_type,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type HandoffPlanStep struct {
+	Sequence       int32  `json:"sequence"`
+	AgentID        string `json:"agent_id"`
+	AgentName      string `json:"agent_name"`
+	Status         string `json:"status"`
+	PromptSummary  string `json:"prompt_summary"`
+	AttemptNumber  int32  `json:"attempt_number,omitempty"`
+	ResultRevision string `json:"result_revision,omitempty"`
+}
+
+type HandoffPreviousStep struct {
+	Sequence       int32  `json:"sequence"`
+	AgentName      string `json:"agent_name"`
+	Status         string `json:"status"`
+	ResultSummary  string `json:"result_summary"`
+	ResultRevision string `json:"result_revision,omitempty"`
+}
+
+type HandoffArtifactSummary struct {
+	StepSequence int32  `json:"step_sequence"`
+	Summary      string `json:"summary"`
+}
+
+type HandoffRevisions struct {
+	Base   *RevisionInfo `json:"base,omitempty"`
+	Result *RevisionInfo `json:"result,omitempty"`
 }
 
 // AgentData holds agent details returned by the claim endpoint.

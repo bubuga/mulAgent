@@ -2072,7 +2072,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 
 	if err := d.client.StartTask(ctx, task.ID); err != nil {
 		taskLog.Error("start task failed", "error", err)
-		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("start task failed: %s", err.Error()), "", "", "agent_error"); failErr != nil {
+		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("start task failed: %s", err.Error()), "", "", "agent_error", nil, nil, nil); failErr != nil {
 			taskLog.Error("fail task after start error", "error", failErr)
 		}
 		return
@@ -2127,7 +2127,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		taskLog.Error("task failed", "error", err)
 		// runTask returned without a TaskResult, so we don't have a SessionID
 		// to forward — best we can do is record the failure.
-		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "agent_error"); failErr != nil {
+		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "agent_error", nil, nil, nil); failErr != nil {
 			taskLog.Error("fail task callback failed", "error", failErr)
 		}
 		return
@@ -2169,13 +2169,44 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 // the agent may have built a real session before getting stuck, and we want
 // the next chat turn to resume there rather than start over and "forget"
 // the conversation.
+
+// revisionWarnings collects non-empty Warning fields from RevisionInfo pointers
+// into a flat string slice for persistence as revision_warnings JSONB.
+func revisionWarnings(revisions ...*RevisionInfo) []string {
+	var warnings []string
+	for _, r := range revisions {
+		if r != nil && r.Warning != "" {
+			warnings = append(warnings, r.Warning)
+		}
+	}
+	return warnings
+}
+
 func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result TaskResult, taskLog *slog.Logger) {
+	// PR8: Capture result revision after agent finishes.
+	var resultRevision *RevisionInfo
+	if result.WorkDir != "" {
+		rev := CaptureRevision(ctx, result.WorkDir)
+		resultRevision = &rev
+	}
+	warnings := revisionWarnings(resultRevision)
+
 	switch result.Status {
 	case "completed":
 		taskLog.Info("task completed", "status", result.Status)
-		if err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir); err != nil {
+		if err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir, nil, resultRevision, warnings); err != nil {
 			taskLog.Error("complete task failed, falling back to fail", "error", err)
-			if failErr := d.client.FailTask(ctx, taskID, fmt.Sprintf("complete task failed: %s", err.Error()), result.SessionID, result.WorkDir, "agent_error"); failErr != nil {
+			if failErr := d.client.FailTask(
+				ctx,
+				taskID,
+				fmt.Sprintf("complete task failed: %s", err.Error()),
+				result.SessionID,
+				result.WorkDir,
+				"agent_error",
+				nil,
+				resultRevision,
+				warnings,
+			); failErr != nil {
 				taskLog.Error("fail task fallback also failed", "error", failErr)
 			}
 		}
@@ -2189,7 +2220,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			}
 		}
 		taskLog.Info("task did not complete, reporting failure", "status", result.Status, "failure_reason", failureReason)
-		if err := d.client.FailTask(ctx, taskID, result.Comment, result.SessionID, result.WorkDir, failureReason); err != nil {
+		if err := d.client.FailTask(ctx, taskID, result.Comment, result.SessionID, result.WorkDir, failureReason, nil, resultRevision, warnings); err != nil {
 			taskLog.Error("report failed task failed", "error", err)
 		}
 	}
@@ -2364,6 +2395,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// NOTE: No cleanup — workdir is preserved for reuse by future tasks on
 	// the same (agent, issue) pair. The work_dir path is stored in DB on
 	// task completion and passed back via PriorWorkDir on the next claim.
+
+	// PR8: Capture base revision before agent starts modifying the workspace.
+	var baseRevision *RevisionInfo
+	if env.WorkDir != "" {
+		rev := CaptureRevision(ctx, env.WorkDir)
+		baseRevision = &rev
+		// D15: Write base revision into handoff bundle so prompt includes it.
+		if task.HandoffBundle != nil {
+			task.HandoffBundle.Revisions.Base = baseRevision
+		}
+		// D16: Pin base revision synchronously — don't wait for session_id.
+		pinCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := d.client.PinTaskSession(pinCtx, task.ID, "", env.WorkDir, baseRevision, revisionWarnings(baseRevision))
+		cancel()
+		if err != nil {
+			taskLog.Debug("pin base revision failed", "error", err)
+		}
+	}
 
 	prompt := BuildPrompt(task, provider)
 
@@ -2889,7 +2938,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 						go func() {
 							pinCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 							defer cancel()
-							if err := d.client.PinTaskSession(pinCtx, taskID, sid, wd); err != nil {
+							if err := d.client.PinTaskSession(pinCtx, taskID, sid, wd, nil, nil); err != nil {
 								taskLog.Debug("pin session failed", "error", err)
 							}
 						}()

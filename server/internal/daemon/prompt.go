@@ -158,6 +158,10 @@ func buildChatPrompt(task Task) string {
 
 	// Step execution tasks: use approved prompt, no plan CLI.
 	if task.IsExecutionStep {
+		if task.HandoffBundle != nil {
+			return buildStepPromptWithHandoff(task, &b)
+		}
+		// Fallback: minimal prompt without handoff (backward compat).
 		b.WriteString("You are executing an approved plan step in a group chat.\n")
 		b.WriteString("Complete ONLY this step. Do NOT call `multica chat plan submit`.\n")
 		b.WriteString("Do NOT create new plans. Just execute the step and report the result.\n\n")
@@ -304,4 +308,133 @@ func buildOrchestratorPrompt(task Task, b *strings.Builder) string {
 	}
 
 	return b.String()
+}
+
+// buildStepPromptWithHandoff renders the full handoff-enriched prompt for
+// step-linked tasks. D14: uses full task.ChatMessage for the instruction.
+func buildStepPromptWithHandoff(task Task, b *strings.Builder) string {
+	hb := task.HandoffBundle
+
+	b.WriteString("You are executing an approved plan step in a group chat.\n")
+	b.WriteString("Complete ONLY this step. Do NOT call `multica chat plan submit`.\n")
+	b.WriteString("Do NOT create new plans. Just execute the step and report the result.\n\n")
+	b.WriteString("Handoff summaries are guidance; actual files in the workspace are authoritative.\n")
+	b.WriteString("Inspect relevant files before editing or reporting.\n\n")
+
+	// D14: Current step instruction uses full task.ChatMessage (untruncated).
+	fmt.Fprintf(b, "## Current Step (Step %d", hb.Sequence)
+	totalSteps := len(hb.PlanSteps)
+	if totalSteps > 0 {
+		fmt.Fprintf(b, " of %d", totalSteps)
+	}
+	fmt.Fprintf(b, ")\n")
+	fmt.Fprintf(b, "Agent: %s\n", hb.AgentName)
+	fmt.Fprintf(b, "Instruction:\n%s\n\n", task.ChatMessage)
+
+	// Plan Summary
+	if len(hb.PlanSteps) > 0 {
+		b.WriteString("## Plan Summary\n")
+		for _, s := range hb.PlanSteps {
+			marker := ""
+			if s.Sequence == hb.Sequence {
+				marker = " (current)"
+			}
+			fmt.Fprintf(b, "- Step %d: %s — %s%s — %s\n",
+				s.Sequence, s.AgentName, s.Status, marker, truncatePrompt(s.PromptSummary, 80))
+		}
+		b.WriteString("\n")
+	}
+
+	// Previous Step Results (D9)
+	if len(hb.PreviousSteps) > 0 {
+		b.WriteString("## Previous Step Results\n")
+		for _, ps := range hb.PreviousSteps {
+			fmt.Fprintf(b, "### Step %d (%s): %s\n", ps.Sequence, ps.AgentName, ps.Status)
+			if ps.ResultSummary != "" {
+				b.WriteString(ps.ResultSummary)
+				b.WriteString("\n")
+			}
+			if ps.ResultRevision != "" {
+				fmt.Fprintf(b, "Revision: %s\n", ps.ResultRevision)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	// Recent Chat Messages
+	if len(hb.RecentMessages) > 0 {
+		b.WriteString("## Recent Chat Messages\n")
+		for _, m := range hb.RecentMessages {
+			role := m.Role
+			if len(m.AgentID) >= 8 {
+				role = fmt.Sprintf("%s[%s]", m.Role, m.AgentID[:8])
+			}
+			fmt.Fprintf(b, "[%s] %s\n", role, truncatePrompt(m.Content, 200))
+		}
+		b.WriteString("\n")
+	}
+
+	// Artifacts
+	if len(hb.ArtifactSummaries) > 0 {
+		b.WriteString("## Artifacts\n")
+		for _, a := range hb.ArtifactSummaries {
+			fmt.Fprintf(b, "- Step %d: %s\n", a.StepSequence, truncatePrompt(a.Summary, 200))
+		}
+		b.WriteString("\n")
+	}
+
+	// Revision
+	if hb.Revisions.Base != nil || hb.Revisions.Result != nil {
+		b.WriteString("## Revision\n")
+		if hb.Revisions.Base != nil {
+			fmt.Fprintf(b, "Base: %s", hb.Revisions.Base.Head)
+			if hb.Revisions.Base.DirtyCount > 0 {
+				fmt.Fprintf(b, " (%d dirty files)", hb.Revisions.Base.DirtyCount)
+			}
+			b.WriteString("\n")
+		}
+		if hb.Revisions.Result != nil {
+			fmt.Fprintf(b, "Result: %s", hb.Revisions.Result.Head)
+			if hb.Revisions.Result.DirtyCount > 0 {
+				fmt.Fprintf(b, " (%d dirty files)", hb.Revisions.Result.DirtyCount)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Warnings
+	if len(hb.Warnings) > 0 {
+		b.WriteString("## Warnings\n")
+		for _, w := range hb.Warnings {
+			fmt.Fprintf(b, "- %s\n", w)
+		}
+		b.WriteString("\n")
+	}
+
+	// Attachments
+	if len(task.ChatMessageAttachments) > 0 {
+		b.WriteString("Attachments on this message:\n")
+		for _, a := range task.ChatMessageAttachments {
+			if a.ContentType != "" {
+				fmt.Fprintf(b, "- id=%s filename=%q content_type=%s\n", a.ID, a.Filename, a.ContentType)
+			} else {
+				fmt.Fprintf(b, "- id=%s filename=%q\n", a.ID, a.Filename)
+			}
+		}
+		b.WriteString("Use `multica attachment download <id>` to fetch each file locally before referring to it.\n")
+	}
+
+	return b.String()
+}
+
+// truncatePrompt truncates s to maxLen for prompt display.
+func truncatePrompt(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }

@@ -319,7 +319,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 		includeArchived := r.URL.Query().Get("archived") == "true"
 		rows, err := h.Queries.ListChatSessionsForIMV2(r.Context(), db.ListChatSessionsForIMV2Params{
 			WorkspaceID: parseUUID(workspaceID),
-			CreatorID:   parseUUID(userID),
+			UserID:      parseUUID(userID),
 			Column3:     includeArchived,
 		})
 		if err != nil {
@@ -390,8 +390,8 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				ts := timestampToString(s.ArchivedAt)
 				item.ArchivedAt = &ts
 			}
-			if s.LastMessagePreview.Valid {
-				item.LastMessagePreview = &s.LastMessagePreview.String
+			if preview, ok := s.LastMessagePreview.(string); ok && preview != "" {
+				item.LastMessagePreview = &preview
 			}
 			if s.LastMessageAt.Valid {
 				ts := timestampToString(s.LastMessageAt)
@@ -401,7 +401,10 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 			if q != "" {
 				ql := strings.ToLower(q)
 				titleMatch := strings.Contains(strings.ToLower(s.Title), ql)
-				contentMatch := s.LastMessagePreview.Valid && strings.Contains(strings.ToLower(s.LastMessagePreview.String), ql)
+				contentMatch := false
+				if preview, ok := s.LastMessagePreview.(string); ok && preview != "" {
+					contentMatch = strings.Contains(strings.ToLower(preview), ql)
+				}
 				nameMatch := false
 				for _, p := range parts {
 					if strings.Contains(strings.ToLower(p.Name), ql) {

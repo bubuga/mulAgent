@@ -7,7 +7,9 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -59,14 +61,20 @@ func (h *Handler) RecoverOrphanedTasks(w http.ResponseWriter, r *http.Request) {
 // work_dir as soon as they're known — typically right after the agent
 // emits its first system message — so a crash mid-run doesn't lose the
 // resume pointer needed to continue the conversation on the next attempt.
+//
+// PR8: Also supports base_revision for step-linked tasks and participant
+// state updates for group chats. All writes wrapped in a transaction.
 type PinTaskSessionRequest struct {
-	SessionID string `json:"session_id,omitempty"`
-	WorkDir   string `json:"work_dir,omitempty"`
+	SessionID        string                  `json:"session_id,omitempty"`
+	WorkDir          string                  `json:"work_dir,omitempty"`
+	BaseRevision     *service.TaskRevisionInfo `json:"base_revision,omitempty"`
+	RevisionWarnings []string                `json:"revision_warnings,omitempty"`
 }
 
 func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
-	if _, ok := h.requireDaemonTaskAccess(w, r, taskID); !ok {
+	task, ok := h.requireDaemonTaskAccess(w, r, taskID)
+	if !ok {
 		return
 	}
 
@@ -75,23 +83,90 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.SessionID == "" && req.WorkDir == "" {
-		writeError(w, http.StatusBadRequest, "session_id or work_dir required")
+	if req.SessionID == "" && req.WorkDir == "" && req.BaseRevision == nil {
+		writeError(w, http.StatusBadRequest, "session_id, work_dir, or base_revision required")
 		return
 	}
 
-	params := db.UpdateAgentTaskSessionParams{ID: parseUUID(taskID)}
+	ctx := r.Context()
+	taskUUID := parseUUID(taskID)
+
+	// D2: requireDaemonTaskAccess already loaded the task.
+	// Transaction approach: h.TxStarter.Begin (nil-safe for tests).
+	var qtx *db.Queries
+	var tx pgx.Tx
+	if h.TxStarter != nil {
+		var txErr error
+		tx, txErr = h.TxStarter.Begin(ctx)
+		if txErr != nil {
+			slog.Warn("pin-session: begin tx failed", "task_id", taskID, "error", txErr)
+			writeError(w, http.StatusInternalServerError, "pin session failed")
+			return
+		}
+		defer tx.Rollback(ctx)
+		qtx = h.Queries.WithTx(tx)
+	} else {
+		qtx = h.Queries
+	}
+
+	// 1. Update task session (existing behavior)
+	params := db.UpdateAgentTaskSessionParams{ID: taskUUID}
 	if req.SessionID != "" {
 		params.SessionID = pgtype.Text{String: req.SessionID, Valid: true}
 	}
 	if req.WorkDir != "" {
 		params.WorkDir = pgtype.Text{String: req.WorkDir, Valid: true}
 	}
-	if err := h.Queries.UpdateAgentTaskSession(r.Context(), params); err != nil {
+	if err := qtx.UpdateAgentTaskSession(ctx, params); err != nil {
 		slog.Warn("pin-session failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusInternalServerError, "pin session failed")
 		return
 	}
+
+	// 2. PR8: If step-linked AND base_revision non-nil, update attempt + step mirror
+	if task.ChatSessionID.Valid && req.BaseRevision != nil {
+		if _, attErr := qtx.GetStepAttemptByTaskID(ctx, taskUUID); attErr == nil {
+			baseJSON, _ := json.Marshal(req.BaseRevision)
+			baseStr := string(baseJSON)
+			var warningsPtr []byte
+			if req.RevisionWarnings != nil {
+				warningsPtr, _ = json.Marshal(req.RevisionWarnings)
+			}
+			_ = qtx.UpdateStepAttemptRevisionsByTaskID(ctx, db.UpdateStepAttemptRevisionsByTaskIDParams{
+				TaskID:           taskUUID,
+				BaseRevision:     pgtype.Text{String: baseStr, Valid: true},
+				ResultRevision:   pgtype.Text{},
+				RevisionWarnings: warningsPtr,
+			})
+			_ = qtx.UpdateStepRevisionsMirrorByTaskID(ctx, db.UpdateStepRevisionsMirrorByTaskIDParams{
+				TaskID:         taskUUID,
+				BaseRevision:   pgtype.Text{String: baseStr, Valid: true},
+				ResultRevision: pgtype.Text{},
+			})
+		}
+	}
+
+	// 3. PR8: If group chat, update participant state (D6: UPSERT)
+	if task.ChatSessionID.Valid {
+		if cs, csErr := qtx.GetChatSession(ctx, task.ChatSessionID); csErr == nil && cs.Kind == "group" {
+			_, _ = qtx.UpsertChatSessionAgentSession(ctx, db.UpsertChatSessionAgentSessionParams{
+				ChatSessionID: task.ChatSessionID,
+				AgentID:       task.AgentID,
+				SessionID:     pgtype.Text{String: req.SessionID, Valid: req.SessionID != ""},
+				RuntimeID:     task.RuntimeID,
+				WorkDir:       pgtype.Text{String: req.WorkDir, Valid: req.WorkDir != ""},
+			})
+		}
+	}
+
+	if tx != nil {
+		if err := tx.Commit(ctx); err != nil {
+			slog.Warn("pin-session: commit failed", "task_id", taskID, "error", err)
+			writeError(w, http.StatusInternalServerError, "pin session failed")
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

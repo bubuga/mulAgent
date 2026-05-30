@@ -79,8 +79,8 @@ UPDATE chat_session SET updated_at = now()
 WHERE id = $1;
 
 -- name: CreateChatMessage :one
-INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms)
-VALUES ($1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(elapsed_ms))
+INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms, agent_id, message_type, metadata)
+VALUES ($1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(elapsed_ms), sqlc.narg(agent_id), sqlc.narg(message_type), sqlc.narg(metadata))
 RETURNING *;
 
 -- name: ListChatMessages :many
@@ -159,9 +159,9 @@ WHERE id = $1 AND unread_since IS NULL;
 SELECT
   cs.*,
   (cs.unread_since IS NOT NULL)::bool AS has_unread,
-  (SELECT content FROM chat_message
+  COALESCE((SELECT content FROM chat_message
    WHERE chat_session_id = cs.id
-   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+   ORDER BY created_at DESC LIMIT 1), '') AS last_message_preview,
   (SELECT created_at FROM chat_message
    WHERE chat_session_id = cs.id
    ORDER BY created_at DESC LIMIT 1) AS last_message_at
@@ -209,9 +209,9 @@ SELECT
   (cs.unread_since IS NOT NULL)::bool AS has_unread,
   us.pinned_at,
   us.archived_at,
-  (SELECT content FROM chat_message
+  COALESCE((SELECT content FROM chat_message
    WHERE chat_session_id = cs.id
-   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+   ORDER BY created_at DESC LIMIT 1), '') AS last_message_preview,
   (SELECT created_at FROM chat_message
    WHERE chat_session_id = cs.id
    ORDER BY created_at DESC LIMIT 1) AS last_message_at
@@ -434,7 +434,117 @@ ORDER BY es.sequence ASC, sea.attempt_number ASC;
 
 -- name: UpdateStepConfirmationMetadata :exec
 UPDATE chat_message
-SET metadata = metadata || $3::jsonb
-WHERE chat_session_id = $1
+SET metadata = metadata || sqlc.arg(metadata)::jsonb
+WHERE chat_session_id = sqlc.arg(chat_session_id)
   AND message_type = 'step_confirmation'
-  AND (metadata->>'step_id') = $2::text;
+  AND (metadata->>'step_id') = sqlc.arg(step_id)::text;
+
+-- PR8: Sandbox & Handoff queries
+
+-- name: GetChatSessionAgentState :one
+SELECT session_id, runtime_id, work_dir, role
+FROM chat_session_agents
+WHERE chat_session_id = $1 AND agent_id = $2 AND removed_at IS NULL;
+
+-- name: UpsertChatSessionAgentSession :one
+INSERT INTO chat_session_agents (chat_session_id, agent_id, role, session_id, runtime_id, work_dir)
+VALUES (
+  $1, $2,
+  CASE WHEN (SELECT orchestrator_agent_id FROM chat_session WHERE id = $1) IS NOT NULL
+            AND $2 = (SELECT orchestrator_agent_id FROM chat_session WHERE id = $1)
+       THEN 'orchestrator' ELSE 'participant' END,
+  $3, $4, $5
+)
+ON CONFLICT (chat_session_id, agent_id)
+DO UPDATE SET
+  role = EXCLUDED.role,
+  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
+  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
+  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
+  removed_at = NULL
+RETURNING *;
+
+-- name: GetLastChatAgentTaskSession :one
+SELECT session_id, work_dir, runtime_id FROM agent_task_queue
+WHERE chat_session_id = $1
+  AND agent_id = $2
+  AND (
+    status = 'completed'
+    OR (
+      status = 'failed'
+      AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
+      AND NOT (COALESCE(error, '') ILIKE '%400%' AND COALESCE(error, '') ILIKE '%invalid_request_error%')
+    )
+  )
+  AND session_id IS NOT NULL
+ORDER BY completed_at DESC
+LIMIT 1;
+
+-- name: ListRecentChatMessagesForHandoff :many
+SELECT * FROM (
+  SELECT role, content, agent_id, message_type, created_at
+  FROM chat_message
+  WHERE chat_session_id = $1
+  ORDER BY created_at DESC
+  LIMIT $2
+) sub ORDER BY created_at ASC;
+
+-- name: GetStepHandoffContextByTaskID :one
+SELECT
+  sea.id AS attempt_id,
+  sea.attempt_number,
+  sea.approved_prompt,
+  sea.task_id AS attempt_task_id,
+  sea.base_revision,
+  sea.result_revision,
+  sea.revision_warnings,
+  es.id AS step_id,
+  es.sequence,
+  es.plan_id,
+  es.chat_session_id,
+  es.agent_id,
+  a.name AS agent_name,
+  ep.status AS plan_status,
+  cs.kind AS session_kind,
+  cs.workspace_id
+FROM chat_execution_step_attempt sea
+JOIN chat_execution_step es ON es.id = sea.step_id
+JOIN agent a ON a.id = es.agent_id
+JOIN chat_execution_plan ep ON ep.id = es.plan_id
+JOIN chat_session cs ON cs.id = es.chat_session_id
+WHERE sea.task_id = $1;
+
+-- name: ListPlanStepsForHandoff :many
+SELECT es.sequence, es.agent_id, a.name AS agent_name, es.status,
+  es.planned_prompt, es.approved_prompt, es.result_revision, es.artifact_summary,
+  sea.attempt_number, sea.task_id AS latest_task_id,
+  sea.approved_prompt AS attempt_approved_prompt,
+  COALESCE((SELECT cm.content FROM chat_message cm
+   WHERE cm.task_id = sea.task_id AND cm.role = 'assistant'
+   ORDER BY cm.created_at DESC LIMIT 1), '') AS assistant_reply,
+  sea.failure_reason, sea.error
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+LEFT JOIN LATERAL (
+  SELECT task_id, attempt_number, approved_prompt, failure_reason, error
+  FROM chat_execution_step_attempt
+  WHERE step_id = es.id
+  ORDER BY attempt_number DESC LIMIT 1
+) sea ON true
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC;
+
+-- name: UpdateStepAttemptRevisionsByTaskID :exec
+UPDATE chat_execution_step_attempt
+SET base_revision = COALESCE(sqlc.narg('base_revision')::text, base_revision),
+    result_revision = COALESCE(sqlc.narg('result_revision')::text, result_revision),
+    revision_warnings = COALESCE(sqlc.narg('revision_warnings')::jsonb, revision_warnings),
+    updated_at = now()
+WHERE task_id = $1;
+
+-- name: UpdateStepRevisionsMirrorByTaskID :exec
+UPDATE chat_execution_step
+SET base_revision = COALESCE(sqlc.narg('base_revision')::text, base_revision),
+    result_revision = COALESCE(sqlc.narg('result_revision')::text, result_revision),
+    updated_at = now()
+WHERE task_id = $1;

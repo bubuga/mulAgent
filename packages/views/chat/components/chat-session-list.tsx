@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { chatIMSessionsOptions } from "@multica/core/chat/queries";
-import { useRequiredWorkspaceSlug } from "@multica/core/paths";
+import { useWorkspaceId } from "@multica/core/hooks";
 import { ScrollArea } from "@multica/ui/components/ui/scroll-area";
 import { MessageSquare, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
@@ -19,7 +19,7 @@ interface ChatSessionListProps {
 
 export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery }: ChatSessionListProps) {
   const { t } = useT("chat");
-  const wsId = useRequiredWorkspaceSlug();
+  const wsId = useWorkspaceId();
   const { data: sessions, isLoading } = useQuery(chatIMSessionsOptions(wsId));
 
   const filtered = useMemo(() => {

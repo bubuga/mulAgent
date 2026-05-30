@@ -980,7 +980,7 @@ func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID) (*db.Ag
 // queued chat message could be claimed in the window between the task
 // flipping to 'completed' and chat_session.session_id being refreshed,
 // causing the new task to resume against a stale (or NULL) session.
-func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string) (*db.AgentTaskQueue, error) {
+func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string, revision *TaskRevisionUpdate) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		t, err := qtx.CompleteAgentTask(ctx, db.CompleteAgentTaskParams{
@@ -1012,6 +1012,27 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 				RuntimeID: sessionRuntimeID,
 			}); err != nil {
 				return fmt.Errorf("update chat session resume pointer: %w", err)
+			}
+
+			// PR8: Group chat participant state update (D4, D11, D20).
+			if cs, csErr := qtx.GetChatSession(ctx, t.ChatSessionID); csErr == nil && cs.Kind == "group" {
+				if _, upsertErr := qtx.UpsertChatSessionAgentSession(ctx, db.UpsertChatSessionAgentSessionParams{
+					ChatSessionID: t.ChatSessionID,
+					AgentID:       t.AgentID,
+					SessionID:     pgtype.Text{String: sessionID, Valid: sessionID != ""},
+					RuntimeID:     t.RuntimeID,
+					WorkDir:       pgtype.Text{String: workDir, Valid: workDir != ""},
+				}); upsertErr != nil {
+					slog.Warn("complete: upsert participant state failed",
+						"task_id", util.UUIDToString(t.ID), "error", upsertErr)
+				}
+			}
+
+			// PR8: Step-linked task revision update (D11, D20).
+			if revision != nil {
+				if _, attErr := qtx.GetStepAttemptByTaskID(ctx, t.ID); attErr == nil {
+					s.updateStepRevisions(ctx, qtx, t.ID, revision)
+				}
 			}
 		}
 		return nil
@@ -1169,7 +1190,46 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 //
 // failureReason is a coarse classifier consumed by the auto-retry path.
 // Pass "" when unknown (treated as 'agent_error').
-func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, failureReason string) (*db.AgentTaskQueue, error) {
+
+// updateStepRevisions marshals revision data and writes to attempt + step mirror (D10, D20).
+func (s *TaskService) updateStepRevisions(ctx context.Context, qtx *db.Queries, taskID pgtype.UUID, revision *TaskRevisionUpdate) {
+	var baseJSON, resultJSON, warningsJSON []byte
+	if revision.BaseRevision != nil {
+		baseJSON, _ = json.Marshal(revision.BaseRevision)
+	}
+	if revision.ResultRevision != nil {
+		resultJSON, _ = json.Marshal(revision.ResultRevision)
+	}
+	if revision.RevisionWarnings != nil {
+		warningsJSON, _ = json.Marshal(revision.RevisionWarnings)
+	}
+
+	params := db.UpdateStepAttemptRevisionsByTaskIDParams{TaskID: taskID}
+	if baseJSON != nil {
+		params.BaseRevision = pgtype.Text{String: string(baseJSON), Valid: true}
+	}
+	if resultJSON != nil {
+		params.ResultRevision = pgtype.Text{String: string(resultJSON), Valid: true}
+	}
+	if warningsJSON != nil {
+		params.RevisionWarnings = warningsJSON
+	}
+	if err := qtx.UpdateStepAttemptRevisionsByTaskID(ctx, params); err != nil {
+		slog.Warn("update step attempt revisions failed", "task_id", util.UUIDToString(taskID), "error", err)
+	}
+
+	mirrorParams := db.UpdateStepRevisionsMirrorByTaskIDParams{TaskID: taskID}
+	if baseJSON != nil {
+		mirrorParams.BaseRevision = pgtype.Text{String: string(baseJSON), Valid: true}
+	}
+	if resultJSON != nil {
+		mirrorParams.ResultRevision = pgtype.Text{String: string(resultJSON), Valid: true}
+	}
+	if err := qtx.UpdateStepRevisionsMirrorByTaskID(ctx, mirrorParams); err != nil {
+		slog.Warn("update step revisions mirror failed", "task_id", util.UUIDToString(taskID), "error", err)
+	}
+}
+func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, failureReason string, revision *TaskRevisionUpdate) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		t, err := qtx.FailAgentTask(ctx, db.FailAgentTaskParams{
@@ -1202,6 +1262,27 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 				RuntimeID: sessionRuntimeID,
 			}); err != nil {
 				return fmt.Errorf("update chat session resume pointer: %w", err)
+			}
+
+			// PR8: Group chat participant state update (D4, D11, D20).
+			if cs, csErr := qtx.GetChatSession(ctx, t.ChatSessionID); csErr == nil && cs.Kind == "group" {
+				if _, upsertErr := qtx.UpsertChatSessionAgentSession(ctx, db.UpsertChatSessionAgentSessionParams{
+					ChatSessionID: t.ChatSessionID,
+					AgentID:       t.AgentID,
+					SessionID:     pgtype.Text{String: sessionID, Valid: sessionID != ""},
+					RuntimeID:     t.RuntimeID,
+					WorkDir:       pgtype.Text{String: workDir, Valid: workDir != ""},
+				}); upsertErr != nil {
+					slog.Warn("fail: upsert participant state failed",
+						"task_id", util.UUIDToString(t.ID), "error", upsertErr)
+				}
+			}
+
+			// PR8: Step-linked task revision update (D11, D20).
+			if revision != nil {
+				if _, attErr := qtx.GetStepAttemptByTaskID(ctx, t.ID); attErr == nil {
+					s.updateStepRevisions(ctx, qtx, t.ID, revision)
+				}
 			}
 		}
 		return nil
