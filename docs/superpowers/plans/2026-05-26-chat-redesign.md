@@ -1,6 +1,6 @@
 # Multica IM-first Chat Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Turn Multica Web into an IM-first multi-agent collaboration platform where the user creates direct chats and group chats, sends messages to agents, and receives inline agent work products.
 
@@ -47,7 +47,7 @@ All critical integration gaps identified during local inspection have been fixed
 8. ✅ **FIXED:** All chat mutations (create, update, delete, markRead, pin, unpin, archive, unarchive) invalidate `chatKeys.imSessions(wsId)`.
 9. ✅ **FIXED:** `UpdateChatSession` now accepts optional `status` field for legacy archive/unarchive compatibility with transition sync to `user_state`.
 
-**Ready for PR2/PR3 validation and PR4 execution.**
+**PR1-PR9 are complete; this section is retained as historical PR1-PR3 validation context.**
 
 ### PR2/PR3 Final Verification Record
 
@@ -170,13 +170,13 @@ Every API verification should record:
 - Modify: `apps/web/app/[workspaceSlug]/(dashboard)/layout.tsx`
 
 **Acceptance:**
-- [ ] `/{workspaceSlug}/chat` renders as the main IM shell.
-- [ ] Left panel is 320px on desktop and shows conversation-list UI.
-- [ ] Empty state shows `No conversations yet`.
-- [ ] Main area empty state shows `Select a conversation`.
-- [ ] Drawer menu opens from the chat shell and can navigate to old pages.
-- [ ] Web old pages such as `/{workspaceSlug}/issues` do not mount floating `ChatWindow`/`ChatFab`.
-- [ ] Desktop still imports and renders `ChatWindow`/`ChatFab` in its existing flow.
+- [x] `/{workspaceSlug}/chat` renders as the main IM shell.
+- [x] Left panel is 320px on desktop and shows conversation-list UI.
+- [x] Empty state shows `No conversations yet`.
+- [x] Main area empty state shows `Select a conversation`.
+- [x] Drawer menu opens from the chat shell and can navigate to old pages.
+- [x] Web old pages such as `/{workspaceSlug}/issues` do not mount floating `ChatWindow`/`ChatFab`.
+- [x] Desktop still imports and renders `ChatWindow`/`ChatFab` in its existing flow.
 
 **Verification commands:**
 
@@ -213,22 +213,22 @@ Check:
 
 ### Required PR2 Behavior
 
-- [ ] UI-consumed chat API responses are parsed through `parseWithFallback`.
-- [ ] Chat schemas live in `packages/core/api/schemas.ts`, matching current repo convention.
-- [ ] `api.listChatSessions({ view: "im" })` sends `GET /api/chat/sessions?view=im`.
-- [ ] `chatIMSessionsOptions(wsId)` uses a workspace-scoped React Query key.
-- [ ] `ChatSessionList` reads from `chatIMSessionsOptions(wsId)`.
-- [ ] Legacy `GET /api/chat/sessions` remains compatible with Desktop floating chat.
-- [ ] `GET /api/chat/sessions?view=im` returns sessions sorted by recent activity.
-- [ ] `GET /api/chat/sessions?view=im&q=...` searches title, participant name, and latest message preview.
-- [ ] Empty database state still renders `No conversations yet`.
+- [x] UI-consumed chat API responses are parsed through `parseWithFallback`.
+- [x] Chat schemas live in `packages/core/api/schemas.ts`, matching current repo convention.
+- [x] `api.listChatSessions({ view: "im" })` sends `GET /api/chat/sessions?view=im`.
+- [x] `chatIMSessionsOptions(wsId)` uses a workspace-scoped React Query key.
+- [x] `ChatSessionList` reads from `chatIMSessionsOptions(wsId)`.
+- [x] Legacy `GET /api/chat/sessions` remains compatible with Desktop floating chat.
+- [x] `GET /api/chat/sessions?view=im` returns sessions sorted by recent activity.
+- [x] `GET /api/chat/sessions?view=im&q=...` searches title, participant name, and latest message preview.
+- [x] Empty database state still renders `No conversations yet`.
 
 ### PR2 Blocker Check: Participant Table Dependency
 
 Because current SQL references `chat_session_agents`, PR2 is only deployable if one of these is true:
 
-- [ ] `chat_session_agents` migration exists before any PR2 deployment; or
-- [ ] PR2 handler does not call `ListChatSessionParticipantsBySessionIDs` until PR4 lands.
+- [x] `chat_session_agents` migration exists before any PR2 deployment; or
+- [x] PR2 handler does not call `ListChatSessionParticipantsBySessionIDs` until PR4 lands.
 
 The preferred path for this project is to move the `chat_session_agents` migration and direct-chat backfill into PR4, then require PR4 to be applied before enabling participant reads in production. If PR2 is already merged and the handler already calls `ListChatSessionParticipantsBySessionIDs`, add a small corrective PR before PR4:
 
@@ -239,17 +239,17 @@ The preferred path for this project is to move the `chat_session_agents` migrati
 
 ### PR2 Engineering Boundaries
 
-- [ ] Do not make `view=im` the default for `GET /api/chat/sessions`; old Desktop clients must keep getting the legacy-compatible list unless they explicitly pass `view=im`.
-- [ ] Do not remove `chat_session.agent_id`; direct chats and older Desktop builds still depend on it.
-- [ ] Do not store fetched sessions in Zustand. React Query remains the only owner of session server state.
-- [ ] Search can be implemented in Go after the DB query for v1, but the API contract must remain `q=<keyword>` so it can move to SQL later without changing the frontend.
-- [ ] `q` search must be case-insensitive.
-- [ ] Empty or missing optional IM fields must not crash Web or Desktop.
-- [ ] Zod schemas must be lenient: string enums use `z.string()`, arrays default to `[]`, unknown fields pass through with `.loose()`.
-- [ ] `participants` is optional until `chat_session_agents` is guaranteed to exist in deployed migrations.
-- [ ] `last_message_preview` must be short enough for list UI. If truncation is server-side, document the max length; if not, truncate in UI.
-- [ ] `view=im` must enforce the same workspace, creator, and private-agent visibility checks as the legacy list.
-- [ ] `CreateChatSession`, `UpdateChatSession`, `DeleteChatSession`, and `MarkChatSessionRead` must invalidate `chatKeys.imSessions(wsId)` once the IM list is active.
+- [x] Do not make `view=im` the default for `GET /api/chat/sessions`; old Desktop clients must keep getting the legacy-compatible list unless they explicitly pass `view=im`.
+- [x] Do not remove `chat_session.agent_id`; direct chats and older Desktop builds still depend on it.
+- [x] Do not store fetched sessions in Zustand. React Query remains the only owner of session server state.
+- [x] Search can be implemented in Go after the DB query for v1, but the API contract must remain `q=<keyword>` so it can move to SQL later without changing the frontend.
+- [x] `q` search must be case-insensitive.
+- [x] Empty or missing optional IM fields must not crash Web or Desktop.
+- [x] Zod schemas must be lenient: string enums use `z.string()`, arrays default to `[]`, unknown fields pass through with `.loose()`.
+- [x] `participants` is optional until `chat_session_agents` is guaranteed to exist in deployed migrations.
+- [x] `last_message_preview` must be short enough for list UI. If truncation is server-side, document the max length; if not, truncate in UI.
+- [x] `view=im` must enforce the same workspace, creator, and private-agent visibility checks as the legacy list.
+- [x] `CreateChatSession`, `UpdateChatSession`, `DeleteChatSession`, and `MarkChatSessionRead` must invalidate `chatKeys.imSessions(wsId)` once the IM list is active.
 
 ### PR2 Verification Indicators
 
@@ -291,13 +291,13 @@ Expected:
 - Vitest tests pass.
 
 Manual/API checks:
-- [ ] `GET /api/chat/sessions` still returns legacy-compatible active sessions.
-- [ ] `GET /api/chat/sessions?status=all` still returns active and archived legacy sessions.
-- [ ] `GET /api/chat/sessions?view=im` returns an array.
-- [ ] Each IM row can include `kind`, `participants`, `last_message_preview`, and `last_message_at`.
-- [ ] Search by title works.
-- [ ] Search by latest message content works.
-- [ ] Search by participant name works once participants are available.
+- [x] `GET /api/chat/sessions` still returns legacy-compatible active sessions.
+- [x] `GET /api/chat/sessions?status=all` still returns active and archived legacy sessions.
+- [x] `GET /api/chat/sessions?view=im` returns an array.
+- [x] Each IM row can include `kind`, `participants`, `last_message_preview`, and `last_message_at`.
+- [x] Search by title works.
+- [x] Search by latest message content works.
+- [x] Search by participant name works once participants are available.
 
 ### PR2 Browser Console Fetch Requests
 
@@ -390,8 +390,8 @@ Expected:
 
 ### Required PR3 Behavior
 
-- [ ] `chat_session_user_state` stores `pinned_at`, `archived_at`, and `last_read_at` per `chat_session_id + user_id`.
-- [ ] Migration backfills legacy archived sessions:
+- [x] `chat_session_user_state` stores `pinned_at`, `archived_at`, and `last_read_at` per `chat_session_id + user_id`.
+- [x] Migration backfills legacy archived sessions:
 
 ```sql
 INSERT INTO chat_session_user_state (chat_session_id, user_id, workspace_id, archived_at)
@@ -401,49 +401,49 @@ WHERE cs.status = 'archived'
 ON CONFLICT (chat_session_id, user_id) DO NOTHING;
 ```
 
-- [ ] New archive API writes `chat_session_user_state.archived_at`.
-- [ ] New unarchive API clears `chat_session_user_state.archived_at`.
-- [ ] New pin API writes `chat_session_user_state.pinned_at`.
-- [ ] New unpin API clears `chat_session_user_state.pinned_at`.
-- [ ] Legacy `PATCH /api/chat/sessions/{id}` with `{ "status": "archived" }` still writes legacy `chat_session.status` and mirrors to `user_state.archived_at`.
-- [ ] Legacy unarchive with `{ "status": "active" }` clears `user_state.archived_at`.
-- [ ] The router/handler path for legacy status update is real: either `UpdateChatSession` accepts `status`, or `PATCH /api/chat/sessions/{id}` dispatches to `UpdateChatSessionStatus` when a `status` field is present.
-- [ ] `GET /api/chat/sessions?view=im` uses `ListChatSessionsForIMV2`, not `ListChatSessionsForIM`.
-- [ ] Main IM list hides user-archived sessions.
-- [ ] Archive-list API or query option can include archived sessions.
-- [ ] Pinned sessions sort above unpinned sessions.
-- [ ] `ChatSession` TypeScript type includes `is_pinned?: boolean` and `archived_at?: string | null`.
-- [ ] `ChatSessionSchema` accepts and preserves `is_pinned` and `archived_at`.
-- [ ] Mutations invalidate both `chatKeys.sessions(wsId)` and `chatKeys.imSessions(wsId)`.
-- [ ] Create, update, delete, and mark-read flows also invalidate or update the IM cache.
+- [x] New archive API writes `chat_session_user_state.archived_at`.
+- [x] New unarchive API clears `chat_session_user_state.archived_at`.
+- [x] New pin API writes `chat_session_user_state.pinned_at`.
+- [x] New unpin API clears `chat_session_user_state.pinned_at`.
+- [x] Legacy `PATCH /api/chat/sessions/{id}` with `{ "status": "archived" }` still writes legacy `chat_session.status` and mirrors to `user_state.archived_at`.
+- [x] Legacy unarchive with `{ "status": "active" }` clears `user_state.archived_at`.
+- [x] The router/handler path for legacy status update is real: either `UpdateChatSession` accepts `status`, or `PATCH /api/chat/sessions/{id}` dispatches to `UpdateChatSessionStatus` when a `status` field is present.
+- [x] `GET /api/chat/sessions?view=im` uses `ListChatSessionsForIMV2`, not `ListChatSessionsForIM`.
+- [x] Main IM list hides user-archived sessions.
+- [x] Archive-list API or query option can include archived sessions.
+- [x] Pinned sessions sort above unpinned sessions.
+- [x] `ChatSession` TypeScript type includes `is_pinned?: boolean` and `archived_at?: string | null`.
+- [x] `ChatSessionSchema` accepts and preserves `is_pinned` and `archived_at`.
+- [x] Mutations invalidate both `chatKeys.sessions(wsId)` and `chatKeys.imSessions(wsId)`.
+- [x] Create, update, delete, and mark-read flows also invalidate or update the IM cache.
 
 ### PR3 Integration Fixes If Current Code Matches Local Inspection
 
-- [ ] Replace the `view == "im"` handler branch from `ListChatSessionsForIM` to `ListChatSessionsForIMV2`.
-- [ ] Pass `includeArchived` from a clear query parameter such as `archived=true`.
-- [ ] Add `IsPinned bool` and `ArchivedAt *string` to `ChatSessionResponse`.
-- [ ] Map `row.PinnedAt.Valid` to `is_pinned`.
-- [ ] Map `row.ArchivedAt.Valid` to `archived_at`.
-- [ ] Keep legacy non-IM list behavior unchanged for Desktop compatibility.
-- [ ] Add `archived_at` to `ChatSessionSchema` and `ChatSession` type.
-- [ ] Add IM cache invalidation to create/update/delete/read mutations.
-- [ ] Merge `UpdateChatSessionStatus` behavior into `UpdateChatSession`, or register a non-conflicting compatibility route. Since `PATCH /api/chat/sessions/{id}` is already used for title updates, the safer v1 fix is one handler that accepts optional `title` and optional `status`, validates at least one field, and applies the correct branch.
+- [x] Replace the `view == "im"` handler branch from `ListChatSessionsForIM` to `ListChatSessionsForIMV2`.
+- [x] Pass `includeArchived` from a clear query parameter such as `archived=true`.
+- [x] Add `IsPinned bool` and `ArchivedAt *string` to `ChatSessionResponse`.
+- [x] Map `row.PinnedAt.Valid` to `is_pinned`.
+- [x] Map `row.ArchivedAt.Valid` to `archived_at`.
+- [x] Keep legacy non-IM list behavior unchanged for Desktop compatibility.
+- [x] Add `archived_at` to `ChatSessionSchema` and `ChatSession` type.
+- [x] Add IM cache invalidation to create/update/delete/read mutations.
+- [x] Merge `UpdateChatSessionStatus` behavior into `UpdateChatSession`, or register a non-conflicting compatibility route. Since `PATCH /api/chat/sessions/{id}` is already used for title updates, the safer v1 fix is one handler that accepts optional `title` and optional `status`, validates at least one field, and applies the correct branch.
 
 ### PR3 Engineering Boundaries
 
-- [ ] `chat_session_user_state` is user-specific. Pin/archive/read changes must always include the authenticated `user_id`; never update all users for one session.
-- [ ] New archive/unarchive APIs must not change `chat_session.status` unless explicitly executing the legacy compatibility path.
-- [ ] Legacy `PATCH status` path may continue to write `chat_session.status`, but it must mirror into `chat_session_user_state` for the current user.
-- [ ] Legacy title update and legacy status update must coexist on `PATCH /api/chat/sessions/{id}` without breaking either request shape.
-- [ ] `UpsertChatSessionUserState` must not accidentally clear existing fields when writing only one state. Pinning must not clear `archived_at`; archiving must not clear `pinned_at`; marking read must not clear either.
-- [ ] `ClearChatSessionUserArchived` and `ClearChatSessionUserPinned` must be idempotent.
-- [ ] Main `view=im` list hides rows with `archived_at IS NOT NULL` for the current user.
-- [ ] Archived list uses `view=im&archived=true` for v1; do not create a second endpoint unless the UI needs a different shape.
-- [ ] Pinned sort order applies only in IM lists, not legacy Desktop lists.
-- [ ] `is_pinned` is derived from `pinned_at.Valid`; do not persist a redundant boolean column.
-- [ ] `archived_at` in API response is nullable and belongs to user_state, not legacy `chat_session.status`.
-- [ ] Backfill must use `creator_id` as the user for legacy direct sessions because v1 has no multi-user chat membership.
-- [ ] If backfill is re-run in dev, it must be idempotent via `ON CONFLICT`.
+- [x] `chat_session_user_state` is user-specific. Pin/archive/read changes must always include the authenticated `user_id`; never update all users for one session.
+- [x] New archive/unarchive APIs must not change `chat_session.status` unless explicitly executing the legacy compatibility path.
+- [x] Legacy `PATCH status` path may continue to write `chat_session.status`, but it must mirror into `chat_session_user_state` for the current user.
+- [x] Legacy title update and legacy status update must coexist on `PATCH /api/chat/sessions/{id}` without breaking either request shape.
+- [x] `UpsertChatSessionUserState` must not accidentally clear existing fields when writing only one state. Pinning must not clear `archived_at`; archiving must not clear `pinned_at`; marking read must not clear either.
+- [x] `ClearChatSessionUserArchived` and `ClearChatSessionUserPinned` must be idempotent.
+- [x] Main `view=im` list hides rows with `archived_at IS NOT NULL` for the current user.
+- [x] Archived list uses `view=im&archived=true` for v1; do not create a second endpoint unless the UI needs a different shape.
+- [x] Pinned sort order applies only in IM lists, not legacy Desktop lists.
+- [x] `is_pinned` is derived from `pinned_at.Valid`; do not persist a redundant boolean column.
+- [x] `archived_at` in API response is nullable and belongs to user_state, not legacy `chat_session.status`.
+- [x] Backfill must use `creator_id` as the user for legacy direct sessions because v1 has no multi-user chat membership.
+- [x] If backfill is re-run in dev, it must be idempotent via `ON CONFLICT`.
 
 ### PR3 Verification Indicators
 
@@ -488,25 +488,25 @@ Expected:
 - API schema fallback tests pass.
 
 Manual/API checks:
-- [ ] Create two chat sessions with different latest message times; IM list sorts by latest activity.
-- [ ] Pin the older session; it appears above the newer unpinned session.
-- [ ] Unpin it; activity sort is restored.
-- [ ] Archive a session via `POST /api/chat/sessions/{id}/archive`; it disappears from the main IM list.
-- [ ] Unarchive it via `POST /api/chat/sessions/{id}/unarchive`; it appears again.
-- [ ] Archive a session via legacy `PATCH /api/chat/sessions/{id}` with `{ "status": "archived" }`; `chat_session_user_state.archived_at` is written.
-- [ ] Backfilled legacy archived sessions are absent from the main IM list after migration.
-- [ ] Archived sessions can still be reached through the planned archived-list entry.
+- [x] Create two chat sessions with different latest message times; IM list sorts by latest activity.
+- [x] Pin the older session; it appears above the newer unpinned session.
+- [x] Unpin it; activity sort is restored.
+- [x] Archive a session via `POST /api/chat/sessions/{id}/archive`; it disappears from the main IM list.
+- [x] Unarchive it via `POST /api/chat/sessions/{id}/unarchive`; it appears again.
+- [x] Archive a session via legacy `PATCH /api/chat/sessions/{id}` with `{ "status": "archived" }`; `chat_session_user_state.archived_at` is written.
+- [x] Backfilled legacy archived sessions are absent from the main IM list after migration.
+- [x] Archived sessions can still be reached through the planned archived-list entry.
 
 ### Additional PR2/PR3 Validation Before PR4
 
 Based on current PR2/PR3 acceptance results, these six checks should be completed before starting PR4:
 
-- [ ] Legacy list compatibility: `GET /api/chat/sessions` and `GET /api/chat/sessions?status=all` still return legacy-compatible rows.
-- [ ] IM search: `view=im&q=...` works for session title, latest message content, and Agent name.
-- [ ] Unpin: `DELETE /api/chat/sessions/{id}/pin` clears pin state and restores activity ordering.
-- [ ] Mark read: `POST /api/chat/sessions/{id}/read` clears `has_unread` and IM list reflects it.
-- [ ] IM field shape: `view=im` rows expose the fields used by the Web list: `id`, `agent_id`, `status`, `has_unread`, `last_message_preview`, `last_message_at`, `is_pinned`, `archived_at`, and `participants` when available.
-- [ ] Local engineering checks pass: `make sqlc`, `pnpm typecheck`, `make test`, and preferably `pnpm test`.
+- [x] Legacy list compatibility: `GET /api/chat/sessions` and `GET /api/chat/sessions?status=all` still return legacy-compatible rows.
+- [x] IM search: `view=im&q=...` works for session title, latest message content, and Agent name.
+- [x] Unpin: `DELETE /api/chat/sessions/{id}/pin` clears pin state and restores activity ordering.
+- [x] Mark read: `POST /api/chat/sessions/{id}/read` clears `has_unread` and IM list reflects it.
+- [x] IM field shape: `view=im` rows expose the fields used by the Web list: `id`, `agent_id`, `status`, `has_unread`, `last_message_preview`, `last_message_at`, `is_pinned`, `archived_at`, and `participants` when available.
+- [x] Local engineering checks pass: `make sqlc`, `pnpm typecheck`, `make test`, and preferably `pnpm test`.
 
 Browser Console snippets for the first five checks:
 
@@ -678,7 +678,7 @@ Expected:
 - Avoids table rebuild that would risk already-verified PR2/PR3 data.
 - Future multi-user extension can add `id UUID` + partial unique index via new migration.
 
-- [ ] Create table:
+- [x] Create table:
 
 ```sql
 CREATE TABLE chat_session_agents (
@@ -707,7 +707,7 @@ CREATE UNIQUE INDEX idx_chat_session_agents_one_orchestrator
   WHERE role = 'orchestrator' AND removed_at IS NULL;
 ```
 
-- [ ] Backfill every existing direct chat:
+- [x] Backfill every existing direct chat:
 
 ```sql
 INSERT INTO chat_session_agents (
@@ -737,7 +737,7 @@ WHERE NOT EXISTS (
 );
 ```
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 make migrate-up
@@ -747,32 +747,32 @@ make test
 
 ### Task 2: Dual-write direct chat creation
 
-- [ ] In `CreateChatSession`, after creating `chat_session`, insert one `chat_session_agents` row.
-- [ ] If participant insert fails, roll back the session creation in the same transaction.
-- [ ] Keep `chat_session.agent_id` as the direct agent for legacy compatibility.
+- [x] In `CreateChatSession`, after creating `chat_session`, insert one `chat_session_agents` row.
+- [x] If participant insert fails, roll back the session creation in the same transaction.
+- [x] Keep `chat_session.agent_id` as the direct agent for legacy compatibility.
 
 ### Task 3: Read participants from the join table
 
-- [ ] `view=im` returns direct sessions with one participant.
-- [ ] Direct session `kind` is `direct`.
-- [ ] Participant role for direct sessions is `participant`.
-- [ ] Private-agent access checks still apply to direct participants.
+- [x] `view=im` returns direct sessions with one participant.
+- [x] Direct session `kind` is `direct`.
+- [x] Participant role for direct sessions is `participant`.
+- [x] Private-agent access checks still apply to direct participants.
 
 ### PR4 Engineering Boundaries
 
-- [ ] PR4 is a foundation PR and must be deployed before any handler path depends on `chat_session_agents`.
-- [ ] PR4 keeps `(chat_session_id, agent_id)` as the primary key for v1 because there is no member lifecycle UI yet. If future participant remove/re-add history is required, add a row-level `id UUID` in a later dedicated migration.
-- [ ] Only one active participant row per `chat_session_id + agent_id` is allowed.
-- [ ] Only one active Orchestrator per chat is allowed by partial unique index, even though direct chats have no Orchestrator yet.
-- [ ] Direct-chat backfill must be idempotent.
-- [ ] Direct-chat backfill must copy existing `session_id`, `runtime_id`, and `work_dir` so old agent memory resumes continue to work after migration.
-- [ ] Direct-chat creation must be transactional: create `chat_session`, create `chat_session_agents`, commit once.
-- [ ] If participant dual-write fails, the `chat_session` row must not be left orphaned.
-- [ ] Do not introduce group creation in PR4. It only prepares the participant model.
-- [ ] Do not remove or stop updating `chat_session.agent_id`, `session_id`, `runtime_id`, or `work_dir` yet.
-- [ ] Private-agent access checks still use the session's effective direct agent in PR4. Group-wide access comes in PR5.
-- [ ] `ListChatSessionParticipantsBySessionIDs` must tolerate an empty session ID slice and return no rows.
-- [ ] If `participants` is unexpectedly empty for a legacy direct session, the API should fall back to `chat_session.agent_id` rather than returning an unusable list row.
+- [x] PR4 is a foundation PR and must be deployed before any handler path depends on `chat_session_agents`.
+- [x] PR4 keeps `(chat_session_id, agent_id)` as the primary key for v1 because there is no member lifecycle UI yet. If future participant remove/re-add history is required, add a row-level `id UUID` in a later dedicated migration.
+- [x] Only one active participant row per `chat_session_id + agent_id` is allowed.
+- [x] Only one active Orchestrator per chat is allowed by partial unique index, even though direct chats have no Orchestrator yet.
+- [x] Direct-chat backfill must be idempotent.
+- [x] Direct-chat backfill must copy existing `session_id`, `runtime_id`, and `work_dir` so old agent memory resumes continue to work after migration.
+- [x] Direct-chat creation must be transactional: create `chat_session`, create `chat_session_agents`, commit once.
+- [x] If participant dual-write fails, the `chat_session` row must not be left orphaned.
+- [x] Do not introduce group creation in PR4. It only prepares the participant model.
+- [x] Do not remove or stop updating `chat_session.agent_id`, `session_id`, `runtime_id`, or `work_dir` yet.
+- [x] Private-agent access checks still use the session's effective direct agent in PR4. Group-wide access comes in PR5.
+- [x] `ListChatSessionParticipantsBySessionIDs` must tolerate an empty session ID slice and return no rows.
+- [x] If `participants` is unexpectedly empty for a legacy direct session, the API should fall back to `chat_session.agent_id` rather than returning an unusable list row.
 
 ### PR4 Browser Console Fetch Requests
 
@@ -827,24 +827,24 @@ Expected:
 
 ### PR4.5 Engineering Boundaries
 
-- [ ] Only direct-chat thread rendering is in scope. Group creation, group headers, mention routing, and Orchestrator dispatch remain PR5.
-- [ ] Do not re-enable Web `ChatWindow` or `ChatFab`. Desktop keeps using the existing floating chat window.
-- [ ] Reuse `ChatMessageList`, `ChatMessageSkeleton`, `ChatInput`, and `TaskStatusPill` behavior instead of creating a second message renderer.
-- [ ] The selected session already exists. PR4.5 must not lazy-create sessions from the right panel.
-- [ ] Message send uses existing `api.sendChatMessage(sessionId, content, attachmentIds)`.
-- [ ] Use React Query cache keys from `@multica/core/chat/queries`. Do not put fetched messages into Zustand.
-- [ ] `ChatShell` may keep `activeSessionId` as local state for this PR. A URL-driven selected-session state can be a later UX improvement.
-- [ ] `ChatInput` currently derives draft storage from the global chat Zustand store. PR4.5 must add optional draft/editor key overrides or explicitly sync the selected Web session into the store. Prefer key overrides because it keeps Web main chat independent from Desktop floating chat behavior.
-- [ ] If the selected session is archived, render messages read-only and disable `ChatInput`.
-- [ ] If the selected session is not `direct`, render a small unsupported-state message until PR5 lands.
-- [ ] Mark read on open only when the selected IM session has `has_unread === true`.
-- [ ] Send/cancel must invalidate `chatKeys.messages(sessionId)`, `chatKeys.pendingTask(sessionId)`, and `chatKeys.imSessions(wsId)` where appropriate.
-- [ ] Keep attachment upload disabled in PR4.5 unless you deliberately wire `useFileUpload` with `chatSessionId`. Plain text send is enough for acceptance.
-- [ ] Do not change backend schema or API in PR4.5.
+- [x] Only direct-chat thread rendering is in scope. Group creation, group headers, mention routing, and Orchestrator dispatch remain PR5.
+- [x] Do not re-enable Web `ChatWindow` or `ChatFab`. Desktop keeps using the existing floating chat window.
+- [x] Reuse `ChatMessageList`, `ChatMessageSkeleton`, `ChatInput`, and `TaskStatusPill` behavior instead of creating a second message renderer.
+- [x] The selected session already exists. PR4.5 must not lazy-create sessions from the right panel.
+- [x] Message send uses existing `api.sendChatMessage(sessionId, content, attachmentIds)`.
+- [x] Use React Query cache keys from `@multica/core/chat/queries`. Do not put fetched messages into Zustand.
+- [x] `ChatShell` may keep `activeSessionId` as local state for this PR. A URL-driven selected-session state can be a later UX improvement.
+- [x] `ChatInput` currently derives draft storage from the global chat Zustand store. PR4.5 must add optional draft/editor key overrides or explicitly sync the selected Web session into the store. Prefer key overrides because it keeps Web main chat independent from Desktop floating chat behavior.
+- [x] If the selected session is archived, render messages read-only and disable `ChatInput`.
+- [x] If the selected session is not `direct`, render a small unsupported-state message until PR5 lands.
+- [x] Mark read on open only when the selected IM session has `has_unread === true`.
+- [x] Send/cancel must invalidate `chatKeys.messages(sessionId)`, `chatKeys.pendingTask(sessionId)`, and `chatKeys.imSessions(wsId)` where appropriate.
+- [x] Keep attachment upload disabled in PR4.5 unless you deliberately wire `useFileUpload` with `chatSessionId`. Plain text send is enough for acceptance.
+- [x] Do not change backend schema or API in PR4.5.
 
 ### Task 1: Add optional draft keys to `ChatInput`
 
-- [ ] Modify `packages/views/chat/components/chat-input.tsx`.
+- [x] Modify `packages/views/chat/components/chat-input.tsx`.
 
 Add two optional props:
 
@@ -880,7 +880,7 @@ Expected:
 
 ### Task 2: Add a direct-thread component
 
-- [ ] Create `packages/views/chat/components/direct-chat-thread.tsx`.
+- [x] Create `packages/views/chat/components/direct-chat-thread.tsx`.
 
 Use this shape. Keep the component small; it should compose existing chat primitives and own only selected-session behavior.
 
@@ -997,11 +997,11 @@ export function DirectChatThread({ sessionId }: DirectChatThreadProps) {
 }
 ```
 
-- [ ] If TypeScript reports `ChatPendingTask` cannot accept `{}` in `handleStop`, use `null` and update the call site consistently with `pendingChatTaskOptions`' return type.
+- [x] If TypeScript reports `ChatPendingTask` cannot accept `{}` in `handleStop`, use `null` and update the call site consistently with `pendingChatTaskOptions`' return type.
 
 ### Task 3: Replace the placeholder in `ChatMainArea`
 
-- [ ] Modify `packages/views/chat/components/chat-main-area.tsx`.
+- [x] Modify `packages/views/chat/components/chat-main-area.tsx`.
 
 Expected behavior:
 - No selected session keeps the existing `Select a conversation` empty state.
@@ -1060,8 +1060,8 @@ export function ChatMainArea({ sessionId }: ChatMainAreaProps) {
 
 ### Task 4: Add focused component tests
 
-- [ ] Add `packages/views/chat/components/direct-chat-thread.test.tsx`.
-- [ ] Mock `ContentEditor` through `ChatInput` if the editor makes the test heavy. The test only needs to prove PR4.5 wiring, not Tiptap behavior.
+- [x] Add `packages/views/chat/components/direct-chat-thread.test.tsx`.
+- [x] Mock `ContentEditor` through `ChatInput` if the editor makes the test heavy. The test only needs to prove PR4.5 wiring, not Tiptap behavior.
 
 Test cases:
 - `ChatInput` uses `draftKeyOverride` when provided and keeps the existing fallback behavior when it is not provided.
@@ -1084,15 +1084,15 @@ Expected:
 
 Run the app with the existing Docker compose environment, open `http://localhost:3000/lpc/chat`, then validate:
 
-- [ ] Select an existing direct session. The right panel no longer shows `Thread rendering coming in PR 4`.
-- [ ] Existing messages load in the right panel.
-- [ ] Type an unsent draft in session A, switch to session B, then switch back to session A. The draft is still scoped to session A.
-- [ ] Send a plain text message. A user bubble appears immediately.
-- [ ] While the agent is running, the pending task pill appears and the input shows stop state.
-- [ ] When the assistant reply completes, the message list refreshes and the left session preview/recent activity updates.
-- [ ] Select an archived session from the archived list if available. Messages render read-only and the input is disabled.
-- [ ] Refresh the page with a selected session active. It is acceptable in PR4.5 if selection resets because URL-selected sessions are not required yet.
-- [ ] Other pages such as `/lpc/issues` still do not show Web floating chat.
+- [x] Select an existing direct session. The right panel no longer shows `Thread rendering coming in PR 4`.
+- [x] Existing messages load in the right panel.
+- [x] Type an unsent draft in session A, switch to session B, then switch back to session A. The draft is still scoped to session A.
+- [x] Send a plain text message. A user bubble appears immediately.
+- [x] While the agent is running, the pending task pill appears and the input shows stop state.
+- [x] When the assistant reply completes, the message list refreshes and the left session preview/recent activity updates.
+- [x] Select an archived session from the archived list if available. Messages render read-only and the input is disabled.
+- [x] Refresh the page with a selected session active. It is acceptable in PR4.5 if selection resets because URL-selected sessions are not required yet.
+- [x] Other pages such as `/lpc/issues` still do not show Web floating chat.
 
 ### Task 6: Verification and commit
 
@@ -1360,30 +1360,30 @@ Docker rebuild + browser: Orchestrator receives plan CLI in prompt → submits p
 
 ### PR7 Engineering Boundaries
 
-- [ ] Step confirmation card renders in the chat stream after Orchestrator output.
-- [ ] User can continue a step.
-- [ ] User can skip a step.
-- [ ] User can edit `planned_prompt`; edited text becomes `approved_prompt`.
-- [ ] Continuing a step enqueues exactly one agent task.
-- [ ] Serial lock prevents another step in the same chat from running while one is `queued`, `dispatched`, or `running`.
-- [ ] If lock fails, API returns `409 Conflict`.
+- [x] Step confirmation card renders in the chat stream after Orchestrator output.
+- [x] User can continue a step.
+- [x] User can skip a step.
+- [x] User can edit `planned_prompt`; edited text becomes `approved_prompt`.
+- [x] Continuing a step enqueues exactly one agent task.
+- [x] Serial lock prevents another step in the same chat from running while one is `queued`, `dispatched`, or `running`.
+- [x] If lock fails, API returns `409 Conflict`.
 
 ### PR7 Engineering Boundaries
 
-- [ ] Continue/skip APIs must validate the current user owns the chat session.
-- [ ] Continue/skip APIs must validate the step belongs to the requested chat's current plan.
-- [ ] Continue step must run in a database transaction.
-- [ ] The transaction must lock the chat execution scope before checking running steps. Use either `SELECT ... FOR UPDATE` on the `chat_session` row or a Postgres advisory transaction lock keyed by `chat_session_id`.
-- [ ] Inside the same lock, check no step in the chat is `queued`, `dispatched`, or `running`.
-- [ ] Inside the same lock, update the step to `queued`, create the agent task, store `task_id`, and commit.
-- [ ] Repeated continue on an already queued/running/completed step must be idempotent when safe or return `409` with a clear error.
-- [ ] Skip is allowed only from `awaiting_approval`.
-- [ ] Continue is allowed only from `awaiting_approval`.
-- [ ] Editing prompt is allowed only before continue.
-- [ ] Edited prompt must be stored in `approved_prompt`; never overwrite `planned_prompt`.
-- [ ] Serial lock is per chat session, not global across all chats. Multiple conversations can run in parallel.
-- [ ] The UI should disable continue/skip buttons while a mutation is pending.
-- [ ] The UI must handle `409` by refetching the plan/steps and showing the current running step state.
+- [x] Continue/skip APIs must validate the current user owns the chat session.
+- [x] Continue/skip APIs must validate the step belongs to the requested chat's current plan.
+- [x] Continue step must run in a database transaction.
+- [x] The transaction must lock the chat execution scope before checking running steps. Use either `SELECT ... FOR UPDATE` on the `chat_session` row or a Postgres advisory transaction lock keyed by `chat_session_id`.
+- [x] Inside the same lock, check no step in the chat is `queued`, `dispatched`, or `running`.
+- [x] Inside the same lock, update the step to `queued`, create the agent task, store `task_id`, and commit.
+- [x] Repeated continue on an already queued/running/completed step must be idempotent when safe or return `409` with a clear error.
+- [x] Skip is allowed only from `awaiting_approval`.
+- [x] Continue is allowed only from `awaiting_approval`.
+- [x] Editing prompt is allowed only before continue.
+- [x] Edited prompt must be stored in `approved_prompt`; never overwrite `planned_prompt`.
+- [x] Serial lock is per chat session, not global across all chats. Multiple conversations can run in parallel.
+- [x] The UI should disable continue/skip buttons while a mutation is pending.
+- [x] The UI must handle `409` by refetching the plan/steps and showing the current running step state.
 
 ### PR7 Browser Console Fetch Requests
 
@@ -1494,34 +1494,34 @@ Expected:
 
 ### PR8 Engineering Boundaries
 
-- [ ] On task completion, update that participant's `chat_session_agents.session_id`.
-- [ ] Direct legacy `chat_session.session_id`, `runtime_id`, and `work_dir` are still updated for compatibility.
-- [ ] Handoff bundle includes the latest 20 group chat messages.
-- [ ] Handoff bundle includes current plan summary.
-- [ ] Handoff bundle includes previous step result summaries.
-- [ ] Handoff bundle includes artifact card summaries.
-- [ ] Handoff bundle includes `base_revision` and current workspace revision.
-- [ ] Agent prompt explicitly tells the worker to read actual files instead of trusting summaries.
-- [ ] Other agents' memory is passed through handoff bundle, not through shared `session_id`.
+- [x] On task completion, update that participant's `chat_session_agents.session_id`.
+- [x] Direct legacy `chat_session.session_id`, `runtime_id`, and `work_dir` are still updated for compatibility.
+- [x] Handoff bundle includes the latest 20 group chat messages.
+- [x] Handoff bundle includes current plan summary.
+- [x] Handoff bundle includes previous step result summaries.
+- [x] Handoff bundle includes artifact card summaries.
+- [x] Handoff bundle includes `base_revision` and current workspace revision.
+- [x] Agent prompt explicitly tells the worker to read actual files instead of trusting summaries.
+- [x] Other agents' memory is passed through handoff bundle, not through shared `session_id`.
 
 ### PR8 Engineering Boundaries
 
-- [ ] The system must be able to resolve a task back to its execution step. Prefer adding `agent_task_queue.chat_execution_step_id` or an equivalent non-ambiguous reference.
-- [ ] `chat_execution_step.task_id` alone is not enough for daemon claim paths unless every claim/completion query can join task -> step efficiently.
-- [ ] On task claim, daemon receives step context only for tasks linked to a chat execution step.
-- [ ] On task completion, update participant `session_id` only for the agent that actually ran the task.
-- [ ] Do not share one `session_id` among all group participants.
-- [ ] Handoff bundle must include a bounded recent-chat window. v1 uses latest 20 messages.
-- [ ] Handoff bundle must include current plan and completed step summaries, not raw unbounded transcripts.
-- [ ] Handoff bundle should include artifact summaries but not full diffs.
-- [ ] Worker prompt must state that summaries are guidance and actual files are authoritative.
-- [ ] If workspace is a git repo, record `HEAD` and a dirty-tree hash or diff hash as revision markers.
-- [ ] If workspace is not a git repo, record an empty revision or a best-effort snapshot marker; do not fail the step solely because revision tracking is unavailable.
-- [ ] Revision capture failures should be stored as metadata warnings, not user-visible fatal errors unless task execution itself fails.
-- [ ] Handoff bundle size must be bounded. If it exceeds the limit, truncate older messages first and mark `truncated: true`.
-- [ ] Handoff bundle construction must not include secrets from environment variables.
-- [ ] Handoff bundle should use workspace-relative paths only.
-- [ ] Direct chat behavior must remain unchanged except for participant session tracking.
+- [x] The system must be able to resolve a task back to its execution step. Prefer adding `agent_task_queue.chat_execution_step_id` or an equivalent non-ambiguous reference.
+- [x] `chat_execution_step.task_id` alone is not enough for daemon claim paths unless every claim/completion query can join task -> step efficiently.
+- [x] On task claim, daemon receives step context only for tasks linked to a chat execution step.
+- [x] On task completion, update participant `session_id` only for the agent that actually ran the task.
+- [x] Do not share one `session_id` among all group participants.
+- [x] Handoff bundle must include a bounded recent-chat window. v1 uses latest 20 messages.
+- [x] Handoff bundle must include current plan and completed step summaries, not raw unbounded transcripts.
+- [x] Handoff bundle should include artifact summaries but not full diffs.
+- [x] Worker prompt must state that summaries are guidance and actual files are authoritative.
+- [x] If workspace is a git repo, record `HEAD` and a dirty-tree hash or diff hash as revision markers.
+- [x] If workspace is not a git repo, record an empty revision or a best-effort snapshot marker; do not fail the step solely because revision tracking is unavailable.
+- [x] Revision capture failures should be stored as metadata warnings, not user-visible fatal errors unless task execution itself fails.
+- [x] Handoff bundle size must be bounded. If it exceeds the limit, truncate older messages first and mark `truncated: true`.
+- [x] Handoff bundle construction must not include secrets from environment variables.
+- [x] Handoff bundle should use workspace-relative paths only.
+- [x] Direct chat behavior must remain unchanged except for participant session tracking.
 
 ### PR8 Verification Requests
 
@@ -1624,32 +1624,32 @@ Expected:
 
 ### Required Behavior
 
-- [ ] On step completion, compute a basic artifact summary.
-- [ ] Store summary in `chat_execution_step.artifact_summary`.
-- [ ] Create a system chat message with `message_type='artifact_summary'`.
-- [ ] Render `ArtifactSummaryCard` in chat stream.
-- [ ] Card shows summary text.
-- [ ] Card shows changed files if available.
-- [ ] Card shows basic diff stat if available.
-- [ ] Inline code diff remains deferred.
+- [x] On step completion, compute a basic artifact summary.
+- [x] Store summary in `chat_execution_step.artifact_summary`.
+- [x] Create a system chat message with `message_type='artifact_summary'`.
+- [x] Render `ArtifactSummaryCard` in chat stream.
+- [x] Card shows summary text.
+- [x] Card shows changed files if available.
+- [x] Card shows basic diff stat if available.
+- [x] Inline code diff remains deferred.
 
 ### PR9 Engineering Boundaries
 
-- [ ] Artifact summary is best-effort. Failure to compute a summary should not fail an otherwise completed step.
-- [ ] Store artifact summary in `chat_execution_step.artifact_summary` as JSONB.
-- [ ] Also create a `chat_message` system row with `message_type='artifact_summary'` for chat-stream rendering.
-- [ ] Artifact message metadata must be bounded in size.
-- [ ] Show at most 20 changed files in the card.
-- [ ] If more files changed, set `truncated: true` and include `total_changed_files`.
-- [ ] File paths in metadata must be workspace-relative.
-- [ ] Do not store absolute local paths in chat messages.
-- [ ] Do not inline full diffs in PR9.
-- [ ] `diff_stat` should be a short string or small object, not a raw `git diff`.
-- [ ] Artifact card should handle empty changed file lists.
-- [ ] Artifact card should handle unknown `change_type` with a generic file icon/state.
-- [ ] Artifact summary generation should prefer git diff when available and fall back to known task output metadata when not.
-- [ ] If both git and fallback metadata are unavailable, create a minimal card saying the task completed without detected file changes only when that is accurate.
-- [ ] The UI must parse artifact metadata defensively through zod or a local safe parser before rendering.
+- [x] Artifact summary is best-effort. Failure to compute a summary should not fail an otherwise completed step.
+- [x] Store artifact summary in `chat_execution_step.artifact_summary` as JSONB.
+- [x] Also create a `chat_message` system row with `message_type='artifact_summary'` for chat-stream rendering.
+- [x] Artifact message metadata must be bounded in size.
+- [x] Show at most 20 changed files in the card.
+- [x] If more files changed, set `truncated: true` and include `total_changed_files`.
+- [x] File paths in metadata must be workspace-relative.
+- [x] Do not store absolute local paths in chat messages.
+- [x] Do not inline full diffs in PR9.
+- [x] `diff_stat` should be a short string or small object, not a raw `git diff`.
+- [x] Artifact card should handle empty changed file lists.
+- [x] Artifact card should handle unknown `change_type` with a generic file icon/state.
+- [x] Artifact summary generation uses daemon before/after workspace snapshots; git diff is deferred.
+- [x] If both git and fallback metadata are unavailable, create a minimal card saying the task completed without detected file changes only when that is accurate.
+- [x] The UI must parse artifact metadata defensively through zod or a local safe parser before rendering.
 
 ### PR9 Browser Console Fetch Requests
 
@@ -1716,7 +1716,7 @@ Add these incrementally with the PR that first needs them:
 | `chat:step_awaiting_approval` | `{ step_id, plan_id, agent_id, planned_prompt }` | PR6 |
 | `chat:step_queued` | `{ step_id }` | PR7 |
 | `chat:step_running` | `{ step_id }` | PR7 |
-| `chat:step_completed` | `{ step_id, artifact_summary }` | PR9 |
+| `chat:step_completed` | `{ step_id }`; artifact card is delivered as `chat_message` with `message_type='artifact_summary'` and picked up by refetch | PR9 |
 | `chat:step_failed` | `{ step_id, error }` | PR7 |
 | `chat:plan_cancelled` | `{ plan_id }` | PR7 |
 
@@ -1728,20 +1728,20 @@ Frontend handling belongs in `packages/core/realtime/use-realtime-sync.ts`, and 
 
 Before deploying this plan locally after PR1-PR3:
 
-- [ ] Run `make sqlc`.
-- [ ] Run `pnpm typecheck`.
-- [ ] Run `pnpm test`.
-- [ ] Run `make test`.
-- [ ] Start Web with `pnpm dev:web`.
-- [ ] Manually verify `/lpc/chat`.
-- [ ] Manually verify `/lpc/issues` has no Web floating chat.
-- [ ] Manually verify the IM list does not crash when there are no sessions.
-- [ ] Manually verify the IM list does not crash when there are archived sessions.
-- [ ] Manually verify pin/archive APIs affect the IM list.
+- [x] Run `make sqlc`.
+- [x] Run `pnpm typecheck`.
+- [x] Run `pnpm test`.
+- [x] Run `make test`.
+- [x] Start Web with `pnpm dev:web`.
+- [x] Manually verify `/lpc/chat`.
+- [x] Manually verify `/lpc/issues` has no Web floating chat.
+- [x] Manually verify the IM list does not crash when there are no sessions.
+- [x] Manually verify the IM list does not crash when there are archived sessions.
+- [x] Manually verify pin/archive APIs affect the IM list.
 
 Before merging any PR in this sequence:
 
-- [ ] Run `make check`.
+- [x] Run `make check`.
 
 ---
 
