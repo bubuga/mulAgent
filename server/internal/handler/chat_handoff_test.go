@@ -697,8 +697,8 @@ func TestHandoff_ArtifactSummaries(t *testing.T) {
 	task2ID, _, _ := createPR8StepTask(t, mimo2ID, sessionID, planID, 2, "Review files")
 	testPool.Exec(context.Background(), `UPDATE agent_task_queue SET status='dispatched' WHERE id=$1`, task1ID)
 
-	// Complete step1 with artifact_summary.
-	artifactJSON := `{"files":["hello.py"],"lines_added":10}`
+	// Complete step1 with artifact_summary (PR9 v1 schema).
+	artifactJSON := `{"version":1,"summary":"Changed 1 file","changed_files":[{"path":"hello.py","change_type":"added","size_bytes":123}],"total_changed_files":1,"truncated":false,"diff_stat":{"added":1,"modified":0}}`
 	testPool.Exec(context.Background(), `
 		UPDATE chat_execution_step SET status = 'completed', artifact_summary = $2
 		WHERE plan_id = $1 AND sequence = 1
