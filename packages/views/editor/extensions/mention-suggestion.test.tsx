@@ -117,6 +117,40 @@ describe("createMentionSuggestion", () => {
     expect(items.some((i) => i.type === "agent" && i.label === "Aegis")).toBe(true);
   });
 
+  it("limits group chat mentions to session agents and marks the orchestrator", () => {
+    const qc = fakeQc({
+      members: [{ user_id: "u1", name: "Alice", role: "member" }],
+      agents: [
+        {
+          id: "workspace-agent",
+          name: "Outside",
+          archived_at: null,
+          visibility: "workspace",
+          owner_id: null,
+        },
+      ],
+      issues: [{ id: "i1", identifier: "MUL-1", title: "Mimo bug", status: "todo" }],
+    });
+
+    const config = createMentionSuggestion(qc, {
+      kind: "group-chat",
+      orchestratorAgentId: "agent-2",
+      participants: [
+        { agent_id: "agent-1", role: "participant", name: "mimo1" },
+        { agent_id: "agent-2", role: "orchestrator", name: "mimo2" },
+      ],
+    });
+    const result = config.items!({ query: "mi", editor: {} as never });
+
+    const items = result as MentionItem[];
+    expect(items.map((i) => i.label)).toEqual(["mimo1", "mimo2"]);
+    expect(items.every((i) => i.type === "agent")).toBe(true);
+    expect(items.find((i) => i.id === "agent-2")?.description).toBe("Orchestrator");
+    expect(items.some((i) => i.label === "Alice")).toBe(false);
+    expect(items.some((i) => i.label === "Outside")).toBe(false);
+    expect(items.some((i) => i.type === "issue")).toBe(false);
+  });
+
   it("loads server issue matches into the popup when the list cache misses", async () => {
     searchIssuesMock.mockResolvedValue({
       issues: [

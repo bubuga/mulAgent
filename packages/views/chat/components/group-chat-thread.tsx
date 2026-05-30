@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -15,9 +15,13 @@ import { useAgentPresenceDetail } from "@multica/core/agents";
 import type { ChatMessage, ChatPendingTask } from "@multica/core/types";
 import { ChatInput } from "./chat-input";
 import { ChatMessageList } from "./chat-message-list";
-import { GroupRecipientSelector } from "./group-recipient-selector";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Crown, Users } from "lucide-react";
+import {
+  extractGroupAgentMentionIds,
+  findPlainTextAgentMentions,
+} from "../lib/mention-routing";
+import { useT } from "../../i18n";
 
 interface GroupChatThreadProps {
   sessionId: string;
@@ -28,11 +32,11 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
   const qc = useQueryClient();
   const markRead = useMarkChatSessionRead();
   const markReadInFlightRef = useRef<string | null>(null);
-  const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
+  const { t } = useT("chat");
 
   const { data: sessions = [] } = useQuery(chatIMSessionsOptions(wsId));
   const session = sessions.find((item) => item.id === sessionId);
-  const participants = session?.participants ?? [];
+  const participants = useMemo(() => session?.participants ?? [], [session?.participants]);
   const orchestratorAgentId = session?.orchestrator_agent_id;
   const isArchived = session?.status === "archived" || !!session?.archived_at;
 
@@ -43,6 +47,14 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
 
   const presence = useAgentPresenceDetail(wsId, orchestratorAgentId ?? undefined);
   const availability = presence === "loading" ? undefined : presence.availability;
+  const mentionContext = useMemo(
+    () => ({
+      kind: "group-chat" as const,
+      participants,
+      orchestratorAgentId,
+    }),
+    [orchestratorAgentId, participants],
+  );
 
   // Mark read on open when session has unread.
   useEffect(() => {
@@ -65,7 +77,7 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
 
   const handleSend = useCallback(
     async (content: string, attachmentIds?: string[]) => {
-      const mentionIds = selectedRecipientId ? [selectedRecipientId] : undefined;
+      const mentionIds = extractGroupAgentMentionIds(content, participants);
       const sentAt = new Date().toISOString();
       const optimistic: ChatMessage = {
         id: `optimistic-${Date.now()}`,
@@ -86,7 +98,12 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
         created_at: sentAt,
       });
 
-      const result = await api.sendChatMessage(sessionId, content, attachmentIds, mentionIds);
+      const result = await api.sendChatMessage(
+        sessionId,
+        content,
+        attachmentIds,
+        mentionIds.length > 0 ? mentionIds : undefined,
+      );
       qc.setQueryData<ChatPendingTask>(chatKeys.pendingTask(sessionId), {
         task_id: result.task_id,
         status: "queued",
@@ -95,7 +112,16 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
       qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
       qc.invalidateQueries({ queryKey: chatKeys.imSessions(wsId) });
     },
-    [qc, sessionId, wsId, selectedRecipientId],
+    [participants, qc, sessionId, wsId],
+  );
+
+  const validateContent = useCallback(
+    (content: string) => {
+      const plainMentions = findPlainTextAgentMentions(content, participants);
+      if (plainMentions.length === 0) return null;
+      return t(($) => $.input.raw_agent_mention_error);
+    },
+    [participants, t],
   );
 
   const handleStop = useCallback(() => {
@@ -128,12 +154,12 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
             {orchestratorAgentId && (
               <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5">
                 <Crown className="size-2.5" />
-                Orchestrator
+                {t(($) => $.message_list.orchestrator_badge)}
               </Badge>
             )}
           </div>
           <span className="text-xs text-muted-foreground">
-            {participants.length} members
+            {t(($) => $.message_list.members, { count: participants.length })}
           </span>
         </div>
       </div>
@@ -145,6 +171,7 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
         sessionKind="group"
         participants={participants}
         orchestratorAgentId={orchestratorAgentId}
+        sessionId={sessionId}
       />
       <ChatInput
         onSend={handleSend}
@@ -153,14 +180,8 @@ export function GroupChatThread({ sessionId }: GroupChatThreadProps) {
         disabled={isArchived}
         draftKeyOverride={sessionId}
         editorKeyOverride={sessionId}
-        topSlot={
-          <GroupRecipientSelector
-            participants={participants}
-            orchestratorAgentId={orchestratorAgentId}
-            selectedAgentId={selectedRecipientId}
-            onSelect={setSelectedRecipientId}
-          />
-        }
+        validateContent={validateContent}
+        mentionContext={mentionContext}
       />
     </div>
   );

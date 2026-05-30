@@ -23,6 +23,12 @@ import (
 	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
+// StepLifecycleHook is called by TaskService when step-linked tasks change state.
+type StepLifecycleHook interface {
+	OnStepTaskCompleted(ctx context.Context, taskID pgtype.UUID) error
+	OnStepTaskFailed(ctx context.Context, taskID pgtype.UUID, failureReason, errMsg string) error
+}
+
 type TaskService struct {
 	Queries   *db.Queries
 	TxStarter TxStarter
@@ -36,10 +42,18 @@ type TaskService struct {
 	// goes through the DB. Wired in router.go from the shared Redis
 	// client.
 	EmptyClaim *EmptyClaimCache
+	// StepLifecycle is called when step-linked tasks complete/fail.
+	// Set via SetStepLifecycle after both services are created.
+	StepLifecycle StepLifecycleHook
 
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
+}
+
+// SetStepLifecycle sets the step lifecycle hook.
+func (s *TaskService) SetStepLifecycle(h StepLifecycleHook) {
+	s.StepLifecycle = h
 }
 
 type TaskWakeupNotifier interface {
@@ -966,7 +980,7 @@ func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID) (*db.Ag
 // queued chat message could be claimed in the window between the task
 // flipping to 'completed' and chat_session.session_id being refreshed,
 // causing the new task to resume against a stale (or NULL) session.
-func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string) (*db.AgentTaskQueue, error) {
+func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir string, revision *TaskRevisionUpdate) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		t, err := qtx.CompleteAgentTask(ctx, db.CompleteAgentTaskParams{
@@ -998,6 +1012,27 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 				RuntimeID: sessionRuntimeID,
 			}); err != nil {
 				return fmt.Errorf("update chat session resume pointer: %w", err)
+			}
+
+			// PR8: Group chat participant state update (D4, D11, D20).
+			if cs, csErr := qtx.GetChatSession(ctx, t.ChatSessionID); csErr == nil && cs.Kind == "group" {
+				if _, upsertErr := qtx.UpsertChatSessionAgentSession(ctx, db.UpsertChatSessionAgentSessionParams{
+					ChatSessionID: t.ChatSessionID,
+					AgentID:       t.AgentID,
+					SessionID:     pgtype.Text{String: sessionID, Valid: sessionID != ""},
+					RuntimeID:     t.RuntimeID,
+					WorkDir:       pgtype.Text{String: workDir, Valid: workDir != ""},
+				}); upsertErr != nil {
+					slog.Warn("complete: upsert participant state failed",
+						"task_id", util.UUIDToString(t.ID), "error", upsertErr)
+				}
+			}
+
+			// PR8: Step-linked task revision update (D11, D20).
+			if revision != nil {
+				if _, attErr := qtx.GetStepAttemptByTaskID(ctx, t.ID); attErr == nil {
+					s.updateStepRevisions(ctx, qtx, t.ID, revision)
+				}
 			}
 		}
 		return nil
@@ -1127,6 +1162,14 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 		s.broadcastChatDone(ctx, task, assistantMsg)
 	}
 
+	// PR7: Step lifecycle hook — advance plan after step completion.
+	if s.StepLifecycle != nil {
+		if err := s.StepLifecycle.OnStepTaskCompleted(ctx, task.ID); err != nil {
+			slog.Warn("step lifecycle: on completed failed",
+				"task_id", util.UUIDToString(task.ID), "error", err)
+		}
+	}
+
 	// Reconcile agent status
 	s.ReconcileAgentStatus(ctx, task.AgentID)
 
@@ -1147,7 +1190,46 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 //
 // failureReason is a coarse classifier consumed by the auto-retry path.
 // Pass "" when unknown (treated as 'agent_error').
-func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, failureReason string) (*db.AgentTaskQueue, error) {
+
+// updateStepRevisions marshals revision data and writes to attempt + step mirror (D10, D20).
+func (s *TaskService) updateStepRevisions(ctx context.Context, qtx *db.Queries, taskID pgtype.UUID, revision *TaskRevisionUpdate) {
+	var baseJSON, resultJSON, warningsJSON []byte
+	if revision.BaseRevision != nil {
+		baseJSON, _ = json.Marshal(revision.BaseRevision)
+	}
+	if revision.ResultRevision != nil {
+		resultJSON, _ = json.Marshal(revision.ResultRevision)
+	}
+	if revision.RevisionWarnings != nil {
+		warningsJSON, _ = json.Marshal(revision.RevisionWarnings)
+	}
+
+	params := db.UpdateStepAttemptRevisionsByTaskIDParams{TaskID: taskID}
+	if baseJSON != nil {
+		params.BaseRevision = pgtype.Text{String: string(baseJSON), Valid: true}
+	}
+	if resultJSON != nil {
+		params.ResultRevision = pgtype.Text{String: string(resultJSON), Valid: true}
+	}
+	if warningsJSON != nil {
+		params.RevisionWarnings = warningsJSON
+	}
+	if err := qtx.UpdateStepAttemptRevisionsByTaskID(ctx, params); err != nil {
+		slog.Warn("update step attempt revisions failed", "task_id", util.UUIDToString(taskID), "error", err)
+	}
+
+	mirrorParams := db.UpdateStepRevisionsMirrorByTaskIDParams{TaskID: taskID}
+	if baseJSON != nil {
+		mirrorParams.BaseRevision = pgtype.Text{String: string(baseJSON), Valid: true}
+	}
+	if resultJSON != nil {
+		mirrorParams.ResultRevision = pgtype.Text{String: string(resultJSON), Valid: true}
+	}
+	if err := qtx.UpdateStepRevisionsMirrorByTaskID(ctx, mirrorParams); err != nil {
+		slog.Warn("update step revisions mirror failed", "task_id", util.UUIDToString(taskID), "error", err)
+	}
+}
+func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, failureReason string, revision *TaskRevisionUpdate) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		t, err := qtx.FailAgentTask(ctx, db.FailAgentTaskParams{
@@ -1181,6 +1263,27 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			}); err != nil {
 				return fmt.Errorf("update chat session resume pointer: %w", err)
 			}
+
+			// PR8: Group chat participant state update (D4, D11, D20).
+			if cs, csErr := qtx.GetChatSession(ctx, t.ChatSessionID); csErr == nil && cs.Kind == "group" {
+				if _, upsertErr := qtx.UpsertChatSessionAgentSession(ctx, db.UpsertChatSessionAgentSessionParams{
+					ChatSessionID: t.ChatSessionID,
+					AgentID:       t.AgentID,
+					SessionID:     pgtype.Text{String: sessionID, Valid: sessionID != ""},
+					RuntimeID:     t.RuntimeID,
+					WorkDir:       pgtype.Text{String: workDir, Valid: workDir != ""},
+				}); upsertErr != nil {
+					slog.Warn("fail: upsert participant state failed",
+						"task_id", util.UUIDToString(t.ID), "error", upsertErr)
+				}
+			}
+
+			// PR8: Step-linked task revision update (D11, D20).
+			if revision != nil {
+				if _, attErr := qtx.GetStepAttemptByTaskID(ctx, t.ID); attErr == nil {
+					s.updateStepRevisions(ctx, qtx, t.ID, revision)
+				}
+			}
 		}
 		return nil
 	}); err != nil {
@@ -1213,10 +1316,26 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
 
-	// Auto-retry eligible failures (orphan, timeout, runtime_offline,
-	// runtime_recovery). The helper itself enforces attempt < max_attempts
-	// and only triggers for issue/chat tasks.
-	retried, _ := s.MaybeRetryFailedTask(ctx, task)
+	// PR7: Step lifecycle hook — mark step failed, plan → awaiting_approval.
+	// Must run BEFORE auto-retry so step-linked tasks skip retry.
+	isStepLinked := false
+	if s.StepLifecycle != nil {
+		if err := s.StepLifecycle.OnStepTaskFailed(ctx, task.ID, failureReason, errMsg); err != nil {
+			slog.Warn("step lifecycle: on failed error",
+				"task_id", util.UUIDToString(task.ID), "error", err)
+		} else {
+			// Check if the task was actually step-linked (hook returns nil for non-step tasks too).
+			if _, attErr := s.Queries.GetStepAttemptByTaskID(ctx, task.ID); attErr == nil {
+				isStepLinked = true
+			}
+		}
+	}
+
+	// Auto-retry eligible failures — skip for step-linked tasks.
+	var retried *db.AgentTaskQueue
+	if !isStepLinked {
+		retried, _ = s.MaybeRetryFailedTask(ctx, task)
+	}
 
 	// Skip the per-failure system comment when we'll immediately retry —
 	// the new task will surface its own status to the user, and we don't

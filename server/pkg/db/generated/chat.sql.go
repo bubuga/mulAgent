@@ -11,9 +11,143 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addChatSessionAgent = `-- name: AddChatSessionAgent :one
+INSERT INTO chat_session_agents (
+  chat_session_id,
+  agent_id,
+  role,
+  session_id,
+  runtime_id,
+  work_dir
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (chat_session_id, agent_id)
+DO UPDATE SET
+  role = EXCLUDED.role,
+  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
+  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
+  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
+  removed_at = NULL
+RETURNING chat_session_id, agent_id, role, runtime_id, session_id, last_seen_step_id, last_seen_revision, joined_at, removed_at, work_dir
+`
+
+type AddChatSessionAgentParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	Role          string      `json:"role"`
+	SessionID     pgtype.Text `json:"session_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	WorkDir       pgtype.Text `json:"work_dir"`
+}
+
+func (q *Queries) AddChatSessionAgent(ctx context.Context, arg AddChatSessionAgentParams) (ChatSessionAgent, error) {
+	row := q.db.QueryRow(ctx, addChatSessionAgent,
+		arg.ChatSessionID,
+		arg.AgentID,
+		arg.Role,
+		arg.SessionID,
+		arg.RuntimeID,
+		arg.WorkDir,
+	)
+	var i ChatSessionAgent
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.AgentID,
+		&i.Role,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.LastSeenStepID,
+		&i.LastSeenRevision,
+		&i.JoinedAt,
+		&i.RemovedAt,
+		&i.WorkDir,
+	)
+	return i, err
+}
+
+const approveStep = `-- name: ApproveStep :one
+UPDATE chat_execution_step
+SET status = 'queued', approved_prompt = $2, task_id = $3, updated_at = now()
+WHERE id = $1 AND status = 'awaiting_approval'
+RETURNING id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at
+`
+
+type ApproveStepParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ApprovedPrompt pgtype.Text `json:"approved_prompt"`
+	TaskID         pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ApproveStep(ctx context.Context, arg ApproveStepParams) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, approveStep, arg.ID, arg.ApprovedPrompt, arg.TaskID)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const cancelNonTerminalStepsByPlan = `-- name: CancelNonTerminalStepsByPlan :exec
+UPDATE chat_execution_step
+SET status = 'cancelled', updated_at = now()
+WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed', 'skipped')
+`
+
+func (q *Queries) CancelNonTerminalStepsByPlan(ctx context.Context, planID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, cancelNonTerminalStepsByPlan, planID)
+	return err
+}
+
+const clearChatSessionUserArchived = `-- name: ClearChatSessionUserArchived :exec
+UPDATE chat_session_user_state
+SET archived_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type ClearChatSessionUserArchivedParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ClearChatSessionUserArchived(ctx context.Context, arg ClearChatSessionUserArchivedParams) error {
+	_, err := q.db.Exec(ctx, clearChatSessionUserArchived, arg.ChatSessionID, arg.UserID)
+	return err
+}
+
+const clearChatSessionUserPinned = `-- name: ClearChatSessionUserPinned :exec
+UPDATE chat_session_user_state
+SET pinned_at = NULL, updated_at = now()
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type ClearChatSessionUserPinnedParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ClearChatSessionUserPinned(ctx context.Context, arg ClearChatSessionUserPinnedParams) error {
+	_, err := q.db.Exec(ctx, clearChatSessionUserPinned, arg.ChatSessionID, arg.UserID)
+	return err
+}
+
 const createChatMessage = `-- name: CreateChatMessage :one
 INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms, agent_id, message_type, metadata)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'text'), COALESCE($9, '{}'::jsonb))
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata
 `
 
@@ -61,7 +195,7 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 const createChatSession = `-- name: CreateChatSession :one
 INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id)
 VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2))
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, kind, orchestrator_agent_id, title_source
 `
 
 type CreateChatSessionParams struct {
@@ -92,6 +226,9 @@ func (q *Queries) CreateChatSession(ctx context.Context, arg CreateChatSessionPa
 		&i.UpdatedAt,
 		&i.UnreadSince,
 		&i.RuntimeID,
+		&i.Kind,
+		&i.OrchestratorAgentID,
+		&i.TitleSource,
 	)
 	return i, err
 }
@@ -103,15 +240,16 @@ RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, s
 `
 
 type CreateChatSessionV2Params struct {
-	WorkspaceID        pgtype.UUID `json:"workspace_id"`
-	AgentID            pgtype.UUID `json:"agent_id"`
-	CreatorID          pgtype.UUID `json:"creator_id"`
-	Title              string      `json:"title"`
-	Kind               string      `json:"kind"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+	AgentID             pgtype.UUID `json:"agent_id"`
+	CreatorID           pgtype.UUID `json:"creator_id"`
+	Title               string      `json:"title"`
+	Kind                string      `json:"kind"`
 	OrchestratorAgentID pgtype.UUID `json:"orchestrator_agent_id"`
-	TitleSource        string      `json:"title_source"`
+	TitleSource         string      `json:"title_source"`
 }
 
+// Extended create that supports kind and orchestrator_agent_id for group chats.
 func (q *Queries) CreateChatSessionV2(ctx context.Context, arg CreateChatSessionV2Params) (ChatSession, error) {
 	row := q.db.QueryRow(ctx, createChatSessionV2,
 		arg.WorkspaceID,
@@ -139,6 +277,44 @@ func (q *Queries) CreateChatSessionV2(ctx context.Context, arg CreateChatSession
 		&i.Kind,
 		&i.OrchestratorAgentID,
 		&i.TitleSource,
+	)
+	return i, err
+}
+
+const createChatSystemMessage = `-- name: CreateChatSystemMessage :one
+INSERT INTO chat_message (chat_session_id, role, content, message_type, metadata)
+VALUES ($1, 'system', $2, $3, $4)
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata
+`
+
+type CreateChatSystemMessageParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	Content       string      `json:"content"`
+	MessageType   string      `json:"message_type"`
+	Metadata      []byte      `json:"metadata"`
+}
+
+// Dedicated query for system messages (plan_created, plan_cancelled, step_confirmation).
+func (q *Queries) CreateChatSystemMessage(ctx context.Context, arg CreateChatSystemMessageParams) (ChatMessage, error) {
+	row := q.db.QueryRow(ctx, createChatSystemMessage,
+		arg.ChatSessionID,
+		arg.Content,
+		arg.MessageType,
+		arg.Metadata,
+	)
+	var i ChatMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.Role,
+		&i.Content,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.FailureReason,
+		&i.ElapsedMs,
+		&i.AgentID,
+		&i.MessageType,
+		&i.Metadata,
 	)
 	return i, err
 }
@@ -194,6 +370,172 @@ func (q *Queries) CreateChatTask(ctx context.Context, arg CreateChatTaskParams) 
 	return i, err
 }
 
+const createExecutionPlan = `-- name: CreateExecutionPlan :one
+INSERT INTO chat_execution_plan (chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at
+`
+
+type CreateExecutionPlanParams struct {
+	ChatSessionID       pgtype.UUID `json:"chat_session_id"`
+	RootMessageID       pgtype.UUID `json:"root_message_id"`
+	OrchestratorAgentID pgtype.UUID `json:"orchestrator_agent_id"`
+	Status              string      `json:"status"`
+	ExecutionMode       string      `json:"execution_mode"`
+}
+
+func (q *Queries) CreateExecutionPlan(ctx context.Context, arg CreateExecutionPlanParams) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, createExecutionPlan,
+		arg.ChatSessionID,
+		arg.RootMessageID,
+		arg.OrchestratorAgentID,
+		arg.Status,
+		arg.ExecutionMode,
+	)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createExecutionStep = `-- name: CreateExecutionStep :one
+INSERT INTO chat_execution_step (plan_id, chat_session_id, sequence, agent_id, status, planned_prompt)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at
+`
+
+type CreateExecutionStepParams struct {
+	PlanID        pgtype.UUID `json:"plan_id"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	Sequence      int32       `json:"sequence"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	Status        string      `json:"status"`
+	PlannedPrompt string      `json:"planned_prompt"`
+}
+
+func (q *Queries) CreateExecutionStep(ctx context.Context, arg CreateExecutionStepParams) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, createExecutionStep,
+		arg.PlanID,
+		arg.ChatSessionID,
+		arg.Sequence,
+		arg.AgentID,
+		arg.Status,
+		arg.PlannedPrompt,
+	)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createStepAttempt = `-- name: CreateStepAttempt :one
+INSERT INTO chat_execution_step_attempt (step_id, attempt_number, task_id, approved_prompt, status)
+VALUES ($1, $2, $3, $4, 'queued')
+RETURNING id, step_id, attempt_number, task_id, approved_prompt, status, failure_reason, error, created_at, updated_at, base_revision, result_revision, revision_warnings
+`
+
+type CreateStepAttemptParams struct {
+	StepID         pgtype.UUID `json:"step_id"`
+	AttemptNumber  int32       `json:"attempt_number"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	ApprovedPrompt string      `json:"approved_prompt"`
+}
+
+func (q *Queries) CreateStepAttempt(ctx context.Context, arg CreateStepAttemptParams) (ChatExecutionStepAttempt, error) {
+	row := q.db.QueryRow(ctx, createStepAttempt,
+		arg.StepID,
+		arg.AttemptNumber,
+		arg.TaskID,
+		arg.ApprovedPrompt,
+	)
+	var i ChatExecutionStepAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.RevisionWarnings,
+	)
+	return i, err
+}
+
+const createStepTask = `-- name: CreateStepTask :one
+INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, chat_session_id)
+VALUES ($1, $2, 'queued', 2, $3)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task
+`
+
+type CreateStepTaskParams struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+}
+
+func (q *Queries) CreateStepTask(ctx context.Context, arg CreateStepTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, createStepTask, arg.AgentID, arg.RuntimeID, arg.ChatSessionID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+	)
+	return i, err
+}
+
 const deleteChatSession = `-- name: DeleteChatSession :exec
 DELETE FROM chat_session WHERE id = $1
 `
@@ -210,8 +552,77 @@ func (q *Queries) DeleteChatSession(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getActivePlanBySession = `-- name: GetActivePlanBySession :one
+SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetActivePlanBySession(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getActivePlanBySession, chatSessionID)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActivePlanBySessionForUpdate = `-- name: GetActivePlanBySessionForUpdate :one
+SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetActivePlanBySessionForUpdate(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getActivePlanBySessionForUpdate, chatSessionID)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActivePlanWithSteps = `-- name: GetActivePlanWithSteps :one
+SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
+WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
+ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) GetActivePlanWithSteps(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getActivePlanWithSteps, chatSessionID)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getChatMessage = `-- name: GetChatMessage :one
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata FROM chat_message
 WHERE id = $1
 `
 
@@ -227,6 +638,9 @@ func (q *Queries) GetChatMessage(ctx context.Context, id pgtype.UUID) (ChatMessa
 		&i.CreatedAt,
 		&i.FailureReason,
 		&i.ElapsedMs,
+		&i.AgentID,
+		&i.MessageType,
+		&i.Metadata,
 	)
 	return i, err
 }
@@ -255,6 +669,38 @@ func (q *Queries) GetChatSession(ctx context.Context, id pgtype.UUID) (ChatSessi
 		&i.Kind,
 		&i.OrchestratorAgentID,
 		&i.TitleSource,
+	)
+	return i, err
+}
+
+const getChatSessionAgentState = `-- name: GetChatSessionAgentState :one
+
+SELECT session_id, runtime_id, work_dir, role
+FROM chat_session_agents
+WHERE chat_session_id = $1 AND agent_id = $2 AND removed_at IS NULL
+`
+
+type GetChatSessionAgentStateParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+}
+
+type GetChatSessionAgentStateRow struct {
+	SessionID pgtype.Text `json:"session_id"`
+	RuntimeID pgtype.UUID `json:"runtime_id"`
+	WorkDir   pgtype.Text `json:"work_dir"`
+	Role      string      `json:"role"`
+}
+
+// PR8: Sandbox & Handoff queries
+func (q *Queries) GetChatSessionAgentState(ctx context.Context, arg GetChatSessionAgentStateParams) (GetChatSessionAgentStateRow, error) {
+	row := q.db.QueryRow(ctx, getChatSessionAgentState, arg.ChatSessionID, arg.AgentID)
+	var i GetChatSessionAgentStateRow
+	err := row.Scan(
+		&i.SessionID,
+		&i.RuntimeID,
+		&i.WorkDir,
+		&i.Role,
 	)
 	return i, err
 }
@@ -289,6 +735,174 @@ func (q *Queries) GetChatSessionInWorkspace(ctx context.Context, arg GetChatSess
 		&i.OrchestratorAgentID,
 		&i.TitleSource,
 	)
+	return i, err
+}
+
+const getChatSessionUserState = `-- name: GetChatSessionUserState :one
+SELECT chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at, created_at, updated_at FROM chat_session_user_state
+WHERE chat_session_id = $1 AND user_id = $2
+`
+
+type GetChatSessionUserStateParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	UserID        pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetChatSessionUserState(ctx context.Context, arg GetChatSessionUserStateParams) (ChatSessionUserState, error) {
+	row := q.db.QueryRow(ctx, getChatSessionUserState, arg.ChatSessionID, arg.UserID)
+	var i ChatSessionUserState
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.UserID,
+		&i.WorkspaceID,
+		&i.PinnedAt,
+		&i.ArchivedAt,
+		&i.LastReadAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExecutionPlan = `-- name: GetExecutionPlan :one
+SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan WHERE id = $1
+`
+
+func (q *Queries) GetExecutionPlan(ctx context.Context, id pgtype.UUID) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getExecutionPlan, id)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExecutionPlanForSession = `-- name: GetExecutionPlanForSession :one
+SELECT ep.id, ep.chat_session_id, ep.root_message_id, ep.orchestrator_agent_id, ep.status, ep.execution_mode, ep.created_at, ep.updated_at FROM chat_execution_plan ep
+JOIN chat_session cs ON cs.id = ep.chat_session_id
+WHERE ep.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3
+`
+
+type GetExecutionPlanForSessionParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+}
+
+// User-side read gate: join chat_session to verify workspace + creator ownership.
+// Used by GetPlan (user-facing API). If Orchestrator CLI needs plan read access
+// in the future, add a separate agent-gate query; do not relax this one.
+func (q *Queries) GetExecutionPlanForSession(ctx context.Context, arg GetExecutionPlanForSessionParams) (ChatExecutionPlan, error) {
+	row := q.db.QueryRow(ctx, getExecutionPlanForSession, arg.ID, arg.WorkspaceID, arg.CreatorID)
+	var i ChatExecutionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.RootMessageID,
+		&i.OrchestratorAgentID,
+		&i.Status,
+		&i.ExecutionMode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExecutionStep = `-- name: GetExecutionStep :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE id = $1
+`
+
+func (q *Queries) GetExecutionStep(ctx context.Context, id pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getExecutionStep, id)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExecutionStepForUpdate = `-- name: GetExecutionStepForUpdate :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetExecutionStepForUpdate(ctx context.Context, id pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getExecutionStepForUpdate, id)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLastChatAgentTaskSession = `-- name: GetLastChatAgentTaskSession :one
+SELECT session_id, work_dir, runtime_id FROM agent_task_queue
+WHERE chat_session_id = $1
+  AND agent_id = $2
+  AND (
+    status = 'completed'
+    OR (
+      status = 'failed'
+      AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
+      AND NOT (COALESCE(error, '') ILIKE '%400%' AND COALESCE(error, '') ILIKE '%invalid_request_error%')
+    )
+  )
+  AND session_id IS NOT NULL
+ORDER BY completed_at DESC
+LIMIT 1
+`
+
+type GetLastChatAgentTaskSessionParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+}
+
+type GetLastChatAgentTaskSessionRow struct {
+	SessionID pgtype.Text `json:"session_id"`
+	WorkDir   pgtype.Text `json:"work_dir"`
+	RuntimeID pgtype.UUID `json:"runtime_id"`
+}
+
+func (q *Queries) GetLastChatAgentTaskSession(ctx context.Context, arg GetLastChatAgentTaskSessionParams) (GetLastChatAgentTaskSessionRow, error) {
+	row := q.db.QueryRow(ctx, getLastChatAgentTaskSession, arg.ChatSessionID, arg.AgentID)
+	var i GetLastChatAgentTaskSessionRow
+	err := row.Scan(&i.SessionID, &i.WorkDir, &i.RuntimeID)
 	return i, err
 }
 
@@ -328,6 +942,76 @@ func (q *Queries) GetLastChatTaskSession(ctx context.Context, chatSessionID pgty
 	return i, err
 }
 
+const getLatestAttemptByStep = `-- name: GetLatestAttemptByStep :one
+SELECT id, step_id, attempt_number, task_id, approved_prompt, status, failure_reason, error, created_at, updated_at, base_revision, result_revision, revision_warnings FROM chat_execution_step_attempt
+WHERE step_id = $1 ORDER BY attempt_number DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestAttemptByStep(ctx context.Context, stepID pgtype.UUID) (ChatExecutionStepAttempt, error) {
+	row := q.db.QueryRow(ctx, getLatestAttemptByStep, stepID)
+	var i ChatExecutionStepAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.RevisionWarnings,
+	)
+	return i, err
+}
+
+const getLatestAttemptNumber = `-- name: GetLatestAttemptNumber :one
+SELECT COALESCE(MAX(attempt_number), 0) AS latest
+FROM chat_execution_step_attempt
+WHERE step_id = $1
+`
+
+func (q *Queries) GetLatestAttemptNumber(ctx context.Context, stepID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getLatestAttemptNumber, stepID)
+	var latest interface{}
+	err := row.Scan(&latest)
+	return latest, err
+}
+
+const getNextPlannedStep = `-- name: GetNextPlannedStep :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step
+WHERE plan_id = $1 AND status = 'planned'
+ORDER BY sequence ASC
+LIMIT 1
+`
+
+func (q *Queries) GetNextPlannedStep(ctx context.Context, planID pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getNextPlannedStep, planID)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPendingChatTask = `-- name: GetPendingChatTask :one
 SELECT id, status, created_at FROM agent_task_queue
 WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running')
@@ -353,8 +1037,239 @@ func (q *Queries) GetPendingChatTask(ctx context.Context, chatSessionID pgtype.U
 	return i, err
 }
 
+const getStepAttemptByTaskID = `-- name: GetStepAttemptByTaskID :one
+SELECT sea.id, sea.step_id, sea.attempt_number, sea.task_id, sea.approved_prompt, sea.status, sea.failure_reason, sea.error, sea.created_at, sea.updated_at, sea.base_revision, sea.result_revision, sea.revision_warnings, es.plan_id, es.chat_session_id, es.sequence, es.agent_id
+FROM chat_execution_step_attempt sea
+JOIN chat_execution_step es ON es.id = sea.step_id
+WHERE sea.task_id = $1
+`
+
+type GetStepAttemptByTaskIDRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	StepID           pgtype.UUID        `json:"step_id"`
+	AttemptNumber    int32              `json:"attempt_number"`
+	TaskID           pgtype.UUID        `json:"task_id"`
+	ApprovedPrompt   string             `json:"approved_prompt"`
+	Status           string             `json:"status"`
+	FailureReason    pgtype.Text        `json:"failure_reason"`
+	Error            pgtype.Text        `json:"error"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	BaseRevision     pgtype.Text        `json:"base_revision"`
+	ResultRevision   pgtype.Text        `json:"result_revision"`
+	RevisionWarnings []byte             `json:"revision_warnings"`
+	PlanID           pgtype.UUID        `json:"plan_id"`
+	ChatSessionID    pgtype.UUID        `json:"chat_session_id"`
+	Sequence         int32              `json:"sequence"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+}
+
+func (q *Queries) GetStepAttemptByTaskID(ctx context.Context, taskID pgtype.UUID) (GetStepAttemptByTaskIDRow, error) {
+	row := q.db.QueryRow(ctx, getStepAttemptByTaskID, taskID)
+	var i GetStepAttemptByTaskIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.StepID,
+		&i.AttemptNumber,
+		&i.TaskID,
+		&i.ApprovedPrompt,
+		&i.Status,
+		&i.FailureReason,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.RevisionWarnings,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+	)
+	return i, err
+}
+
+const getStepByTaskID = `-- name: GetStepByTaskID :one
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE task_id = $1
+`
+
+func (q *Queries) GetStepByTaskID(ctx context.Context, taskID pgtype.UUID) (ChatExecutionStep, error) {
+	row := q.db.QueryRow(ctx, getStepByTaskID, taskID)
+	var i ChatExecutionStep
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStepForUser = `-- name: GetStepForUser :one
+SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, cs.creator_id, cs.workspace_id
+FROM chat_execution_step es
+JOIN chat_session cs ON cs.id = es.chat_session_id
+WHERE es.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3
+`
+
+type GetStepForUserParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+}
+
+type GetStepForUserRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	PlanID          pgtype.UUID        `json:"plan_id"`
+	ChatSessionID   pgtype.UUID        `json:"chat_session_id"`
+	Sequence        int32              `json:"sequence"`
+	AgentID         pgtype.UUID        `json:"agent_id"`
+	Status          string             `json:"status"`
+	PlannedPrompt   string             `json:"planned_prompt"`
+	ApprovedPrompt  pgtype.Text        `json:"approved_prompt"`
+	TaskID          pgtype.UUID        `json:"task_id"`
+	ParentStepID    pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision    pgtype.Text        `json:"base_revision"`
+	ResultRevision  pgtype.Text        `json:"result_revision"`
+	ArtifactSummary []byte             `json:"artifact_summary"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatorID       pgtype.UUID        `json:"creator_id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+}
+
+func (q *Queries) GetStepForUser(ctx context.Context, arg GetStepForUserParams) (GetStepForUserRow, error) {
+	row := q.db.QueryRow(ctx, getStepForUser, arg.ID, arg.WorkspaceID, arg.CreatorID)
+	var i GetStepForUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.Sequence,
+		&i.AgentID,
+		&i.Status,
+		&i.PlannedPrompt,
+		&i.ApprovedPrompt,
+		&i.TaskID,
+		&i.ParentStepID,
+		&i.ParallelGroupID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.ArtifactSummary,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CreatorID,
+		&i.WorkspaceID,
+	)
+	return i, err
+}
+
+const getStepHandoffContextByTaskID = `-- name: GetStepHandoffContextByTaskID :one
+SELECT
+  sea.id AS attempt_id,
+  sea.attempt_number,
+  sea.approved_prompt,
+  sea.task_id AS attempt_task_id,
+  sea.base_revision,
+  sea.result_revision,
+  sea.revision_warnings,
+  es.id AS step_id,
+  es.sequence,
+  es.plan_id,
+  es.chat_session_id,
+  es.agent_id,
+  a.name AS agent_name,
+  ep.status AS plan_status,
+  cs.kind AS session_kind,
+  cs.workspace_id
+FROM chat_execution_step_attempt sea
+JOIN chat_execution_step es ON es.id = sea.step_id
+JOIN agent a ON a.id = es.agent_id
+JOIN chat_execution_plan ep ON ep.id = es.plan_id
+JOIN chat_session cs ON cs.id = es.chat_session_id
+WHERE sea.task_id = $1
+`
+
+type GetStepHandoffContextByTaskIDRow struct {
+	AttemptID        pgtype.UUID `json:"attempt_id"`
+	AttemptNumber    int32       `json:"attempt_number"`
+	ApprovedPrompt   string      `json:"approved_prompt"`
+	AttemptTaskID    pgtype.UUID `json:"attempt_task_id"`
+	BaseRevision     pgtype.Text `json:"base_revision"`
+	ResultRevision   pgtype.Text `json:"result_revision"`
+	RevisionWarnings []byte      `json:"revision_warnings"`
+	StepID           pgtype.UUID `json:"step_id"`
+	Sequence         int32       `json:"sequence"`
+	PlanID           pgtype.UUID `json:"plan_id"`
+	ChatSessionID    pgtype.UUID `json:"chat_session_id"`
+	AgentID          pgtype.UUID `json:"agent_id"`
+	AgentName        string      `json:"agent_name"`
+	PlanStatus       string      `json:"plan_status"`
+	SessionKind      string      `json:"session_kind"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetStepHandoffContextByTaskID(ctx context.Context, taskID pgtype.UUID) (GetStepHandoffContextByTaskIDRow, error) {
+	row := q.db.QueryRow(ctx, getStepHandoffContextByTaskID, taskID)
+	var i GetStepHandoffContextByTaskIDRow
+	err := row.Scan(
+		&i.AttemptID,
+		&i.AttemptNumber,
+		&i.ApprovedPrompt,
+		&i.AttemptTaskID,
+		&i.BaseRevision,
+		&i.ResultRevision,
+		&i.RevisionWarnings,
+		&i.StepID,
+		&i.Sequence,
+		&i.PlanID,
+		&i.ChatSessionID,
+		&i.AgentID,
+		&i.AgentName,
+		&i.PlanStatus,
+		&i.SessionKind,
+		&i.WorkspaceID,
+	)
+	return i, err
+}
+
+const hasActiveStepTask = `-- name: HasActiveStepTask :one
+
+SELECT EXISTS(
+  SELECT 1 FROM chat_execution_step es
+  LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+  LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+  WHERE es.chat_session_id = $1
+    AND (
+      es.status IN ('queued', 'running')
+      OR atq.status IN ('queued', 'dispatched', 'running')
+    )
+) AS has_active
+`
+
+// PR7: Step execution queries
+func (q *Queries) HasActiveStepTask(ctx context.Context, chatSessionID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveStepTask, chatSessionID)
+	var has_active bool
+	err := row.Scan(&has_active)
+	return has_active, err
+}
+
 const listAllChatSessionsByCreator = `-- name: ListAllChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2
@@ -367,19 +1282,22 @@ type ListAllChatSessionsByCreatorParams struct {
 }
 
 type ListAllChatSessionsByCreatorRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	CreatorID   pgtype.UUID        `json:"creator_id"`
-	Title       string             `json:"title"`
-	SessionID   pgtype.Text        `json:"session_id"`
-	WorkDir     pgtype.Text        `json:"work_dir"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID   pgtype.UUID        `json:"runtime_id"`
-	HasUnread   bool               `json:"has_unread"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	Title               string             `json:"title"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Kind                string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	TitleSource         string             `json:"title_source"`
+	HasUnread           bool               `json:"has_unread"`
 }
 
 func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllChatSessionsByCreatorParams) ([]ListAllChatSessionsByCreatorRow, error) {
@@ -404,6 +1322,9 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 			&i.UpdatedAt,
 			&i.UnreadSince,
 			&i.RuntimeID,
+			&i.Kind,
+			&i.OrchestratorAgentID,
+			&i.TitleSource,
 			&i.HasUnread,
 		); err != nil {
 			return nil, err
@@ -454,8 +1375,50 @@ func (q *Queries) ListChatMessages(ctx context.Context, chatSessionID pgtype.UUI
 	return items, nil
 }
 
+const listChatSessionParticipantsBySessionIDs = `-- name: ListChatSessionParticipantsBySessionIDs :many
+SELECT csa.chat_session_id, csa.agent_id, csa.role, a.name AS agent_name, a.avatar_url
+FROM chat_session_agents csa
+JOIN agent a ON a.id = csa.agent_id
+WHERE csa.chat_session_id = ANY($1::uuid[])
+  AND csa.removed_at IS NULL
+`
+
+type ListChatSessionParticipantsBySessionIDsRow struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	Role          string      `json:"role"`
+	AgentName     string      `json:"agent_name"`
+	AvatarUrl     pgtype.Text `json:"avatar_url"`
+}
+
+func (q *Queries) ListChatSessionParticipantsBySessionIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListChatSessionParticipantsBySessionIDsRow, error) {
+	rows, err := q.db.Query(ctx, listChatSessionParticipantsBySessionIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatSessionParticipantsBySessionIDsRow{}
+	for rows.Next() {
+		var i ListChatSessionParticipantsBySessionIDsRow
+		if err := rows.Scan(
+			&i.ChatSessionID,
+			&i.AgentID,
+			&i.Role,
+			&i.AgentName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChatSessionsByCreator = `-- name: ListChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2 AND cs.status = 'active'
@@ -468,19 +1431,22 @@ type ListChatSessionsByCreatorParams struct {
 }
 
 type ListChatSessionsByCreatorRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	CreatorID   pgtype.UUID        `json:"creator_id"`
-	Title       string             `json:"title"`
-	SessionID   pgtype.Text        `json:"session_id"`
-	WorkDir     pgtype.Text        `json:"work_dir"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID   pgtype.UUID        `json:"runtime_id"`
-	HasUnread   bool               `json:"has_unread"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	Title               string             `json:"title"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Kind                string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	TitleSource         string             `json:"title_source"`
+	HasUnread           bool               `json:"has_unread"`
 }
 
 // Returns active sessions with a boolean unread flag. Unread is strictly
@@ -508,6 +1474,9 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 			&i.UpdatedAt,
 			&i.UnreadSince,
 			&i.RuntimeID,
+			&i.Kind,
+			&i.OrchestratorAgentID,
+			&i.TitleSource,
 			&i.HasUnread,
 		); err != nil {
 			return nil, err
@@ -522,11 +1491,11 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 
 const listChatSessionsForIM = `-- name: ListChatSessionsForIM :many
 SELECT
-  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id,
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
   (cs.unread_since IS NOT NULL)::bool AS has_unread,
-  (SELECT content FROM chat_message
+  COALESCE((SELECT content FROM chat_message
    WHERE chat_session_id = cs.id
-   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
+   ORDER BY created_at DESC LIMIT 1), '') AS last_message_preview,
   (SELECT created_at FROM chat_message
    WHERE chat_session_id = cs.id
    ORDER BY created_at DESC LIMIT 1) AS last_message_at
@@ -549,21 +1518,24 @@ type ListChatSessionsForIMParams struct {
 }
 
 type ListChatSessionsForIMRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
-	AgentID            pgtype.UUID        `json:"agent_id"`
-	CreatorID          pgtype.UUID        `json:"creator_id"`
-	Title              string             `json:"title"`
-	SessionID          pgtype.Text        `json:"session_id"`
-	WorkDir            pgtype.Text        `json:"work_dir"`
-	Status             string             `json:"status"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince        pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID          pgtype.UUID        `json:"runtime_id"`
-	HasUnread          bool               `json:"has_unread"`
-	LastMessagePreview pgtype.Text        `json:"last_message_preview"`
-	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	Title               string             `json:"title"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Kind                string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	TitleSource         string             `json:"title_source"`
+	HasUnread           bool               `json:"has_unread"`
+	LastMessagePreview  interface{}        `json:"last_message_preview"`
+	LastMessageAt       pgtype.Timestamptz `json:"last_message_at"`
 }
 
 // IM-first session list with last message preview and sort by activity.
@@ -589,9 +1561,154 @@ func (q *Queries) ListChatSessionsForIM(ctx context.Context, arg ListChatSession
 			&i.UpdatedAt,
 			&i.UnreadSince,
 			&i.RuntimeID,
+			&i.Kind,
+			&i.OrchestratorAgentID,
+			&i.TitleSource,
 			&i.HasUnread,
 			&i.LastMessagePreview,
 			&i.LastMessageAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChatSessionsForIMV2 = `-- name: ListChatSessionsForIMV2 :many
+SELECT
+  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
+  (cs.unread_since IS NOT NULL)::bool AS has_unread,
+  us.pinned_at,
+  us.archived_at,
+  COALESCE((SELECT content FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1), '') AS last_message_preview,
+  (SELECT created_at FROM chat_message
+   WHERE chat_session_id = cs.id
+   ORDER BY created_at DESC LIMIT 1) AS last_message_at
+FROM chat_session cs
+LEFT JOIN chat_session_user_state us
+  ON us.chat_session_id = cs.id AND us.user_id = $2
+WHERE cs.workspace_id = $1
+  AND cs.creator_id = $2
+  AND (us.archived_at IS NULL OR $3::bool)
+ORDER BY
+  us.pinned_at DESC NULLS LAST,
+  COALESCE(
+    (SELECT created_at FROM chat_message
+     WHERE chat_session_id = cs.id
+     ORDER BY created_at DESC LIMIT 1),
+    cs.updated_at
+  ) DESC
+`
+
+type ListChatSessionsForIMV2Params struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	Column3     bool        `json:"column_3"`
+}
+
+type ListChatSessionsForIMV2Row struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	Title               string             `json:"title"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	Status              string             `json:"status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Kind                string             `json:"kind"`
+	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
+	TitleSource         string             `json:"title_source"`
+	HasUnread           bool               `json:"has_unread"`
+	PinnedAt            pgtype.Timestamptz `json:"pinned_at"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+	LastMessagePreview  interface{}        `json:"last_message_preview"`
+	LastMessageAt       pgtype.Timestamptz `json:"last_message_at"`
+}
+
+// IM session list with user_state join for pin/archive and last message preview.
+func (q *Queries) ListChatSessionsForIMV2(ctx context.Context, arg ListChatSessionsForIMV2Params) ([]ListChatSessionsForIMV2Row, error) {
+	rows, err := q.db.Query(ctx, listChatSessionsForIMV2, arg.WorkspaceID, arg.UserID, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatSessionsForIMV2Row{}
+	for rows.Next() {
+		var i ListChatSessionsForIMV2Row
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.CreatorID,
+			&i.Title,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UnreadSince,
+			&i.RuntimeID,
+			&i.Kind,
+			&i.OrchestratorAgentID,
+			&i.TitleSource,
+			&i.HasUnread,
+			&i.PinnedAt,
+			&i.ArchivedAt,
+			&i.LastMessagePreview,
+			&i.LastMessageAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNonTerminalStepsByPlan = `-- name: ListNonTerminalStepsByPlan :many
+SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step
+WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'skipped', 'failed')
+ORDER BY sequence ASC
+`
+
+func (q *Queries) ListNonTerminalStepsByPlan(ctx context.Context, planID pgtype.UUID) ([]ChatExecutionStep, error) {
+	rows, err := q.db.Query(ctx, listNonTerminalStepsByPlan, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatExecutionStep{}
+	for rows.Next() {
+		var i ChatExecutionStep
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -647,6 +1764,327 @@ func (q *Queries) ListPendingChatTasksByCreator(ctx context.Context, arg ListPen
 	return items, nil
 }
 
+const listPlanStepsForHandoff = `-- name: ListPlanStepsForHandoff :many
+SELECT es.sequence, es.agent_id, a.name AS agent_name, es.status,
+  es.planned_prompt, es.approved_prompt, es.result_revision, es.artifact_summary,
+  sea.attempt_number, sea.task_id AS latest_task_id,
+  sea.approved_prompt AS attempt_approved_prompt,
+  COALESCE((SELECT cm.content FROM chat_message cm
+   WHERE cm.task_id = sea.task_id AND cm.role = 'assistant'
+   ORDER BY cm.created_at DESC LIMIT 1), '') AS assistant_reply,
+  sea.failure_reason, sea.error
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+LEFT JOIN LATERAL (
+  SELECT task_id, attempt_number, approved_prompt, failure_reason, error
+  FROM chat_execution_step_attempt
+  WHERE step_id = es.id
+  ORDER BY attempt_number DESC LIMIT 1
+) sea ON true
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC
+`
+
+type ListPlanStepsForHandoffRow struct {
+	Sequence              int32       `json:"sequence"`
+	AgentID               pgtype.UUID `json:"agent_id"`
+	AgentName             string      `json:"agent_name"`
+	Status                string      `json:"status"`
+	PlannedPrompt         string      `json:"planned_prompt"`
+	ApprovedPrompt        pgtype.Text `json:"approved_prompt"`
+	ResultRevision        pgtype.Text `json:"result_revision"`
+	ArtifactSummary       []byte      `json:"artifact_summary"`
+	AttemptNumber         int32       `json:"attempt_number"`
+	LatestTaskID          pgtype.UUID `json:"latest_task_id"`
+	AttemptApprovedPrompt string      `json:"attempt_approved_prompt"`
+	AssistantReply        interface{} `json:"assistant_reply"`
+	FailureReason         pgtype.Text `json:"failure_reason"`
+	Error                 pgtype.Text `json:"error"`
+}
+
+func (q *Queries) ListPlanStepsForHandoff(ctx context.Context, planID pgtype.UUID) ([]ListPlanStepsForHandoffRow, error) {
+	rows, err := q.db.Query(ctx, listPlanStepsForHandoff, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlanStepsForHandoffRow{}
+	for rows.Next() {
+		var i ListPlanStepsForHandoffRow
+		if err := rows.Scan(
+			&i.Sequence,
+			&i.AgentID,
+			&i.AgentName,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.AttemptNumber,
+			&i.LatestTaskID,
+			&i.AttemptApprovedPrompt,
+			&i.AssistantReply,
+			&i.FailureReason,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentChatMessagesForHandoff = `-- name: ListRecentChatMessagesForHandoff :many
+SELECT role, content, agent_id, message_type, created_at FROM (
+  SELECT role, content, agent_id, message_type, created_at
+  FROM chat_message
+  WHERE chat_session_id = $1
+  ORDER BY created_at DESC
+  LIMIT $2
+) sub ORDER BY created_at ASC
+`
+
+type ListRecentChatMessagesForHandoffParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	Limit         int32       `json:"limit"`
+}
+
+type ListRecentChatMessagesForHandoffRow struct {
+	Role        string             `json:"role"`
+	Content     string             `json:"content"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	MessageType string             `json:"message_type"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListRecentChatMessagesForHandoff(ctx context.Context, arg ListRecentChatMessagesForHandoffParams) ([]ListRecentChatMessagesForHandoffRow, error) {
+	rows, err := q.db.Query(ctx, listRecentChatMessagesForHandoff, arg.ChatSessionID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentChatMessagesForHandoffRow{}
+	for rows.Next() {
+		var i ListRecentChatMessagesForHandoffRow
+		if err := rows.Scan(
+			&i.Role,
+			&i.Content,
+			&i.AgentID,
+			&i.MessageType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunningStepsByPlan = `-- name: ListRunningStepsByPlan :many
+SELECT DISTINCT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at FROM chat_execution_step es
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+LEFT JOIN agent_task_queue atq ON atq.id = sea.task_id
+WHERE es.plan_id = $1
+  AND (es.status IN ('queued', 'running') OR atq.status IN ('queued', 'dispatched', 'running'))
+ORDER BY es.sequence ASC
+`
+
+func (q *Queries) ListRunningStepsByPlan(ctx context.Context, planID pgtype.UUID) ([]ChatExecutionStep, error) {
+	rows, err := q.db.Query(ctx, listRunningStepsByPlan, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatExecutionStep{}
+	for rows.Next() {
+		var i ChatExecutionStep
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStepsByPlanWithAgent = `-- name: ListStepsByPlanWithAgent :many
+SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, a.name AS agent_name
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC
+`
+
+type ListStepsByPlanWithAgentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	PlanID          pgtype.UUID        `json:"plan_id"`
+	ChatSessionID   pgtype.UUID        `json:"chat_session_id"`
+	Sequence        int32              `json:"sequence"`
+	AgentID         pgtype.UUID        `json:"agent_id"`
+	Status          string             `json:"status"`
+	PlannedPrompt   string             `json:"planned_prompt"`
+	ApprovedPrompt  pgtype.Text        `json:"approved_prompt"`
+	TaskID          pgtype.UUID        `json:"task_id"`
+	ParentStepID    pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision    pgtype.Text        `json:"base_revision"`
+	ResultRevision  pgtype.Text        `json:"result_revision"`
+	ArtifactSummary []byte             `json:"artifact_summary"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	AgentName       string             `json:"agent_name"`
+}
+
+func (q *Queries) ListStepsByPlanWithAgent(ctx context.Context, planID pgtype.UUID) ([]ListStepsByPlanWithAgentRow, error) {
+	rows, err := q.db.Query(ctx, listStepsByPlanWithAgent, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStepsByPlanWithAgentRow{}
+	for rows.Next() {
+		var i ListStepsByPlanWithAgentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AgentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStepsWithAttempts = `-- name: ListStepsWithAttempts :many
+SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, a.name AS agent_name,
+  sea.id AS attempt_id, sea.attempt_number, sea.task_id AS attempt_task_id,
+  sea.approved_prompt AS attempt_approved_prompt, sea.status AS attempt_status,
+  sea.failure_reason AS attempt_failure_reason, sea.error AS attempt_error,
+  sea.created_at AS attempt_created_at
+FROM chat_execution_step es
+JOIN agent a ON a.id = es.agent_id
+LEFT JOIN chat_execution_step_attempt sea ON sea.step_id = es.id
+WHERE es.plan_id = $1
+ORDER BY es.sequence ASC, sea.attempt_number ASC
+`
+
+type ListStepsWithAttemptsRow struct {
+	ID                    pgtype.UUID        `json:"id"`
+	PlanID                pgtype.UUID        `json:"plan_id"`
+	ChatSessionID         pgtype.UUID        `json:"chat_session_id"`
+	Sequence              int32              `json:"sequence"`
+	AgentID               pgtype.UUID        `json:"agent_id"`
+	Status                string             `json:"status"`
+	PlannedPrompt         string             `json:"planned_prompt"`
+	ApprovedPrompt        pgtype.Text        `json:"approved_prompt"`
+	TaskID                pgtype.UUID        `json:"task_id"`
+	ParentStepID          pgtype.UUID        `json:"parent_step_id"`
+	ParallelGroupID       pgtype.UUID        `json:"parallel_group_id"`
+	BaseRevision          pgtype.Text        `json:"base_revision"`
+	ResultRevision        pgtype.Text        `json:"result_revision"`
+	ArtifactSummary       []byte             `json:"artifact_summary"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	AgentName             string             `json:"agent_name"`
+	AttemptID             pgtype.UUID        `json:"attempt_id"`
+	AttemptNumber         pgtype.Int4        `json:"attempt_number"`
+	AttemptTaskID         pgtype.UUID        `json:"attempt_task_id"`
+	AttemptApprovedPrompt pgtype.Text        `json:"attempt_approved_prompt"`
+	AttemptStatus         pgtype.Text        `json:"attempt_status"`
+	AttemptFailureReason  pgtype.Text        `json:"attempt_failure_reason"`
+	AttemptError          pgtype.Text        `json:"attempt_error"`
+	AttemptCreatedAt      pgtype.Timestamptz `json:"attempt_created_at"`
+}
+
+func (q *Queries) ListStepsWithAttempts(ctx context.Context, planID pgtype.UUID) ([]ListStepsWithAttemptsRow, error) {
+	rows, err := q.db.Query(ctx, listStepsWithAttempts, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStepsWithAttemptsRow{}
+	for rows.Next() {
+		var i ListStepsWithAttemptsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.ChatSessionID,
+			&i.Sequence,
+			&i.AgentID,
+			&i.Status,
+			&i.PlannedPrompt,
+			&i.ApprovedPrompt,
+			&i.TaskID,
+			&i.ParentStepID,
+			&i.ParallelGroupID,
+			&i.BaseRevision,
+			&i.ResultRevision,
+			&i.ArtifactSummary,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AgentName,
+			&i.AttemptID,
+			&i.AttemptNumber,
+			&i.AttemptTaskID,
+			&i.AttemptApprovedPrompt,
+			&i.AttemptStatus,
+			&i.AttemptFailureReason,
+			&i.AttemptError,
+			&i.AttemptCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockChatSessionForDelete = `-- name: LockChatSessionForDelete :one
 SELECT id FROM chat_session
 WHERE id = $1
@@ -662,6 +2100,16 @@ FOR UPDATE
 // their FK check after we commit the delete.
 func (q *Queries) LockChatSessionForDelete(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, lockChatSessionForDelete, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
+const lockChatSessionForExecution = `-- name: LockChatSessionForExecution :one
+SELECT id FROM chat_session WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockChatSessionForExecution(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockChatSessionForExecution, id)
 	err := row.Scan(&id)
 	return id, err
 }
@@ -731,10 +2179,25 @@ func (q *Queries) UpdateChatSessionSession(ctx context.Context, arg UpdateChatSe
 	return err
 }
 
+const updateChatSessionStatus = `-- name: UpdateChatSessionStatus :exec
+UPDATE chat_session SET status = $2, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateChatSessionStatusParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+}
+
+func (q *Queries) UpdateChatSessionStatus(ctx context.Context, arg UpdateChatSessionStatusParams) error {
+	_, err := q.db.Exec(ctx, updateChatSessionStatus, arg.ID, arg.Status)
+	return err
+}
+
 const updateChatSessionTitle = `-- name: UpdateChatSessionTitle :one
 UPDATE chat_session SET title = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, kind, orchestrator_agent_id, title_source
 `
 
 type UpdateChatSessionTitleParams struct {
@@ -758,6 +2221,215 @@ func (q *Queries) UpdateChatSessionTitle(ctx context.Context, arg UpdateChatSess
 		&i.UpdatedAt,
 		&i.UnreadSince,
 		&i.RuntimeID,
+		&i.Kind,
+		&i.OrchestratorAgentID,
+		&i.TitleSource,
+	)
+	return i, err
+}
+
+const updatePlanStatus = `-- name: UpdatePlanStatus :exec
+UPDATE chat_execution_plan SET status = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdatePlanStatusParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+}
+
+func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusParams) error {
+	_, err := q.db.Exec(ctx, updatePlanStatus, arg.ID, arg.Status)
+	return err
+}
+
+const updateStepAttemptRevisionsByTaskID = `-- name: UpdateStepAttemptRevisionsByTaskID :exec
+UPDATE chat_execution_step_attempt
+SET base_revision = COALESCE($2::text, base_revision),
+    result_revision = COALESCE($3::text, result_revision),
+    revision_warnings = COALESCE($4::jsonb, revision_warnings),
+    updated_at = now()
+WHERE task_id = $1
+`
+
+type UpdateStepAttemptRevisionsByTaskIDParams struct {
+	TaskID           pgtype.UUID `json:"task_id"`
+	BaseRevision     pgtype.Text `json:"base_revision"`
+	ResultRevision   pgtype.Text `json:"result_revision"`
+	RevisionWarnings []byte      `json:"revision_warnings"`
+}
+
+func (q *Queries) UpdateStepAttemptRevisionsByTaskID(ctx context.Context, arg UpdateStepAttemptRevisionsByTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateStepAttemptRevisionsByTaskID,
+		arg.TaskID,
+		arg.BaseRevision,
+		arg.ResultRevision,
+		arg.RevisionWarnings,
+	)
+	return err
+}
+
+const updateStepAttemptStatus = `-- name: UpdateStepAttemptStatus :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateStepAttemptStatusParams struct {
+	ID            pgtype.UUID `json:"id"`
+	Status        string      `json:"status"`
+	FailureReason pgtype.Text `json:"failure_reason"`
+	Error         pgtype.Text `json:"error"`
+}
+
+func (q *Queries) UpdateStepAttemptStatus(ctx context.Context, arg UpdateStepAttemptStatusParams) error {
+	_, err := q.db.Exec(ctx, updateStepAttemptStatus,
+		arg.ID,
+		arg.Status,
+		arg.FailureReason,
+		arg.Error,
+	)
+	return err
+}
+
+const updateStepAttemptStatusByTaskID = `-- name: UpdateStepAttemptStatusByTaskID :exec
+UPDATE chat_execution_step_attempt
+SET status = $2, failure_reason = $3, error = $4, updated_at = now()
+WHERE task_id = $1
+`
+
+type UpdateStepAttemptStatusByTaskIDParams struct {
+	TaskID        pgtype.UUID `json:"task_id"`
+	Status        string      `json:"status"`
+	FailureReason pgtype.Text `json:"failure_reason"`
+	Error         pgtype.Text `json:"error"`
+}
+
+func (q *Queries) UpdateStepAttemptStatusByTaskID(ctx context.Context, arg UpdateStepAttemptStatusByTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateStepAttemptStatusByTaskID,
+		arg.TaskID,
+		arg.Status,
+		arg.FailureReason,
+		arg.Error,
+	)
+	return err
+}
+
+const updateStepConfirmationMetadata = `-- name: UpdateStepConfirmationMetadata :exec
+UPDATE chat_message
+SET metadata = metadata || $1::jsonb
+WHERE chat_session_id = $2
+  AND message_type = 'step_confirmation'
+  AND (metadata->>'step_id') = $3::text
+`
+
+type UpdateStepConfirmationMetadataParams struct {
+	Metadata      []byte      `json:"metadata"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	StepID        string      `json:"step_id"`
+}
+
+func (q *Queries) UpdateStepConfirmationMetadata(ctx context.Context, arg UpdateStepConfirmationMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateStepConfirmationMetadata, arg.Metadata, arg.ChatSessionID, arg.StepID)
+	return err
+}
+
+const updateStepRevisionsMirrorByTaskID = `-- name: UpdateStepRevisionsMirrorByTaskID :exec
+UPDATE chat_execution_step
+SET base_revision = COALESCE($2::text, base_revision),
+    result_revision = COALESCE($3::text, result_revision),
+    updated_at = now()
+WHERE task_id = $1
+`
+
+type UpdateStepRevisionsMirrorByTaskIDParams struct {
+	TaskID         pgtype.UUID `json:"task_id"`
+	BaseRevision   pgtype.Text `json:"base_revision"`
+	ResultRevision pgtype.Text `json:"result_revision"`
+}
+
+func (q *Queries) UpdateStepRevisionsMirrorByTaskID(ctx context.Context, arg UpdateStepRevisionsMirrorByTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateStepRevisionsMirrorByTaskID, arg.TaskID, arg.BaseRevision, arg.ResultRevision)
+	return err
+}
+
+const updateStepStatus = `-- name: UpdateStepStatus :exec
+UPDATE chat_execution_step SET status = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdateStepStatusParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+}
+
+func (q *Queries) UpdateStepStatus(ctx context.Context, arg UpdateStepStatusParams) error {
+	_, err := q.db.Exec(ctx, updateStepStatus, arg.ID, arg.Status)
+	return err
+}
+
+const updateStepTaskAndPrompt = `-- name: UpdateStepTaskAndPrompt :exec
+UPDATE chat_execution_step
+SET task_id = $2, approved_prompt = $3, status = 'queued', updated_at = now()
+WHERE id = $1
+`
+
+type UpdateStepTaskAndPromptParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	ApprovedPrompt pgtype.Text `json:"approved_prompt"`
+}
+
+func (q *Queries) UpdateStepTaskAndPrompt(ctx context.Context, arg UpdateStepTaskAndPromptParams) error {
+	_, err := q.db.Exec(ctx, updateStepTaskAndPrompt, arg.ID, arg.TaskID, arg.ApprovedPrompt)
+	return err
+}
+
+const upsertChatSessionAgentSession = `-- name: UpsertChatSessionAgentSession :one
+INSERT INTO chat_session_agents (chat_session_id, agent_id, role, session_id, runtime_id, work_dir)
+VALUES (
+  $1, $2,
+  CASE WHEN (SELECT orchestrator_agent_id FROM chat_session WHERE id = $1) IS NOT NULL
+            AND $2 = (SELECT orchestrator_agent_id FROM chat_session WHERE id = $1)
+       THEN 'orchestrator' ELSE 'participant' END,
+  $3, $4, $5
+)
+ON CONFLICT (chat_session_id, agent_id)
+DO UPDATE SET
+  role = EXCLUDED.role,
+  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
+  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
+  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
+  removed_at = NULL
+RETURNING chat_session_id, agent_id, role, runtime_id, session_id, last_seen_step_id, last_seen_revision, joined_at, removed_at, work_dir
+`
+
+type UpsertChatSessionAgentSessionParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	SessionID     pgtype.Text `json:"session_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	WorkDir       pgtype.Text `json:"work_dir"`
+}
+
+func (q *Queries) UpsertChatSessionAgentSession(ctx context.Context, arg UpsertChatSessionAgentSessionParams) (ChatSessionAgent, error) {
+	row := q.db.QueryRow(ctx, upsertChatSessionAgentSession,
+		arg.ChatSessionID,
+		arg.AgentID,
+		arg.SessionID,
+		arg.RuntimeID,
+		arg.WorkDir,
+	)
+	var i ChatSessionAgent
+	err := row.Scan(
+		&i.ChatSessionID,
+		&i.AgentID,
+		&i.Role,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.LastSeenStepID,
+		&i.LastSeenRevision,
+		&i.JoinedAt,
+		&i.RemovedAt,
+		&i.WorkDir,
 	)
 	return i, err
 }
@@ -804,695 +2476,4 @@ func (q *Queries) UpsertChatSessionUserState(ctx context.Context, arg UpsertChat
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getChatSessionUserState = `-- name: GetChatSessionUserState :one
-SELECT chat_session_id, user_id, workspace_id, pinned_at, archived_at, last_read_at, created_at, updated_at FROM chat_session_user_state
-WHERE chat_session_id = $1 AND user_id = $2
-`
-
-type GetChatSessionUserStateParams struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	UserID        pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetChatSessionUserState(ctx context.Context, arg GetChatSessionUserStateParams) (ChatSessionUserState, error) {
-	row := q.db.QueryRow(ctx, getChatSessionUserState, arg.ChatSessionID, arg.UserID)
-	var i ChatSessionUserState
-	err := row.Scan(
-		&i.ChatSessionID,
-		&i.UserID,
-		&i.WorkspaceID,
-		&i.PinnedAt,
-		&i.ArchivedAt,
-		&i.LastReadAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const clearChatSessionUserPinned = `-- name: ClearChatSessionUserPinned :exec
-UPDATE chat_session_user_state
-SET pinned_at = NULL, updated_at = now()
-WHERE chat_session_id = $1 AND user_id = $2
-`
-
-type ClearChatSessionUserPinnedParams struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	UserID        pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) ClearChatSessionUserPinned(ctx context.Context, arg ClearChatSessionUserPinnedParams) error {
-	_, err := q.db.Exec(ctx, clearChatSessionUserPinned, arg.ChatSessionID, arg.UserID)
-	return err
-}
-
-const clearChatSessionUserArchived = `-- name: ClearChatSessionUserArchived :exec
-UPDATE chat_session_user_state
-SET archived_at = NULL, updated_at = now()
-WHERE chat_session_id = $1 AND user_id = $2
-`
-
-type ClearChatSessionUserArchivedParams struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	UserID        pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) ClearChatSessionUserArchived(ctx context.Context, arg ClearChatSessionUserArchivedParams) error {
-	_, err := q.db.Exec(ctx, clearChatSessionUserArchived, arg.ChatSessionID, arg.UserID)
-	return err
-}
-
-const listChatSessionsForIMV2 = `-- name: ListChatSessionsForIMV2 :many
-SELECT
-  cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.kind, cs.orchestrator_agent_id, cs.title_source,
-  (cs.unread_since IS NOT NULL)::bool AS has_unread,
-  us.pinned_at,
-  us.archived_at,
-  (SELECT content FROM chat_message
-   WHERE chat_session_id = cs.id
-   ORDER BY created_at DESC LIMIT 1) AS last_message_preview,
-  (SELECT created_at FROM chat_message
-   WHERE chat_session_id = cs.id
-   ORDER BY created_at DESC LIMIT 1) AS last_message_at
-FROM chat_session cs
-LEFT JOIN chat_session_user_state us
-  ON us.chat_session_id = cs.id AND us.user_id = $2
-WHERE cs.workspace_id = $1
-  AND cs.creator_id = $2
-  AND (us.archived_at IS NULL OR $3::bool)
-ORDER BY
-  us.pinned_at DESC NULLS LAST,
-  COALESCE(
-    (SELECT created_at FROM chat_message
-     WHERE chat_session_id = cs.id
-     ORDER BY created_at DESC LIMIT 1),
-    cs.updated_at
-  ) DESC
-`
-
-type ListChatSessionsForIMV2Params struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	CreatorID   pgtype.UUID `json:"creator_id"`
-	Column3     bool        `json:"column_3"`
-}
-
-type ListChatSessionsForIMV2Row struct {
-	ID                  pgtype.UUID        `json:"id"`
-	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
-	AgentID             pgtype.UUID        `json:"agent_id"`
-	CreatorID           pgtype.UUID        `json:"creator_id"`
-	Title               string             `json:"title"`
-	SessionID           pgtype.Text        `json:"session_id"`
-	WorkDir             pgtype.Text        `json:"work_dir"`
-	Status              string             `json:"status"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince         pgtype.Timestamptz `json:"unread_since"`
-	RuntimeID           pgtype.UUID        `json:"runtime_id"`
-	Kind                string             `json:"kind"`
-	OrchestratorAgentID pgtype.UUID        `json:"orchestrator_agent_id"`
-	TitleSource         string             `json:"title_source"`
-	HasUnread           bool               `json:"has_unread"`
-	PinnedAt            pgtype.Timestamptz `json:"pinned_at"`
-	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
-	LastMessagePreview  pgtype.Text        `json:"last_message_preview"`
-	LastMessageAt       pgtype.Timestamptz `json:"last_message_at"`
-}
-
-func (q *Queries) ListChatSessionsForIMV2(ctx context.Context, arg ListChatSessionsForIMV2Params) ([]ListChatSessionsForIMV2Row, error) {
-	rows, err := q.db.Query(ctx, listChatSessionsForIMV2, arg.WorkspaceID, arg.CreatorID, arg.Column3)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListChatSessionsForIMV2Row{}
-	for rows.Next() {
-		var i ListChatSessionsForIMV2Row
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.AgentID,
-			&i.CreatorID,
-			&i.Title,
-			&i.SessionID,
-			&i.WorkDir,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.UnreadSince,
-			&i.RuntimeID,
-			&i.Kind,
-			&i.OrchestratorAgentID,
-			&i.TitleSource,
-			&i.HasUnread,
-			&i.PinnedAt,
-			&i.ArchivedAt,
-			&i.LastMessagePreview,
-			&i.LastMessageAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateChatSessionStatus = `-- name: UpdateChatSessionStatus :exec
-UPDATE chat_session SET status = $2, updated_at = now()
-WHERE id = $1
-`
-
-type UpdateChatSessionStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
-}
-
-func (q *Queries) UpdateChatSessionStatus(ctx context.Context, arg UpdateChatSessionStatusParams) error {
-	_, err := q.db.Exec(ctx, updateChatSessionStatus, arg.ID, arg.Status)
-	return err
-}
-
-const listChatSessionParticipantsBySessionIDs = `-- name: ListChatSessionParticipantsBySessionIDs :many
-SELECT csa.chat_session_id, csa.agent_id, csa.role, a.name AS agent_name, a.avatar_url
-FROM chat_session_agents csa
-JOIN agent a ON a.id = csa.agent_id
-WHERE csa.chat_session_id = ANY($1::uuid[])
-  AND csa.removed_at IS NULL
-`
-
-type ListChatSessionParticipantsBySessionIDsRow struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	AgentID       pgtype.UUID `json:"agent_id"`
-	Role          string      `json:"role"`
-	AgentName     string      `json:"agent_name"`
-	AvatarUrl     pgtype.Text `json:"avatar_url"`
-}
-
-func (q *Queries) ListChatSessionParticipantsBySessionIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListChatSessionParticipantsBySessionIDsRow, error) {
-	rows, err := q.db.Query(ctx, listChatSessionParticipantsBySessionIDs, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListChatSessionParticipantsBySessionIDsRow{}
-	for rows.Next() {
-		var i ListChatSessionParticipantsBySessionIDsRow
-		if err := rows.Scan(
-			&i.ChatSessionID,
-			&i.AgentID,
-			&i.Role,
-			&i.AgentName,
-			&i.AvatarUrl,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const addChatSessionAgent = `-- name: AddChatSessionAgent :one
-INSERT INTO chat_session_agents (
-  chat_session_id,
-  agent_id,
-  role,
-  session_id,
-  runtime_id,
-  work_dir
-)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (chat_session_id, agent_id)
-DO UPDATE SET
-  role = EXCLUDED.role,
-  session_id = COALESCE(EXCLUDED.session_id, chat_session_agents.session_id),
-  runtime_id = COALESCE(EXCLUDED.runtime_id, chat_session_agents.runtime_id),
-  work_dir = COALESCE(EXCLUDED.work_dir, chat_session_agents.work_dir),
-  removed_at = NULL
-RETURNING chat_session_id, agent_id, role, session_id, runtime_id, work_dir, joined_at, removed_at
-`
-
-type AddChatSessionAgentParams struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	AgentID       pgtype.UUID `json:"agent_id"`
-	Role          string      `json:"role"`
-	SessionID     pgtype.Text `json:"session_id"`
-	RuntimeID     pgtype.UUID `json:"runtime_id"`
-	WorkDir       pgtype.Text `json:"work_dir"`
-}
-
-type AddChatSessionAgentRow struct {
-	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
-	AgentID       pgtype.UUID        `json:"agent_id"`
-	Role          string             `json:"role"`
-	SessionID     pgtype.Text        `json:"session_id"`
-	RuntimeID     pgtype.UUID        `json:"runtime_id"`
-	WorkDir       pgtype.Text        `json:"work_dir"`
-	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
-	RemovedAt     pgtype.Timestamptz `json:"removed_at"`
-}
-
-func (q *Queries) AddChatSessionAgent(ctx context.Context, arg AddChatSessionAgentParams) (AddChatSessionAgentRow, error) {
-	row := q.db.QueryRow(ctx, addChatSessionAgent,
-		arg.ChatSessionID,
-		arg.AgentID,
-		arg.Role,
-		arg.SessionID,
-		arg.RuntimeID,
-		arg.WorkDir,
-	)
-	var i AddChatSessionAgentRow
-	err := row.Scan(
-		&i.ChatSessionID,
-		&i.AgentID,
-		&i.Role,
-		&i.SessionID,
-		&i.RuntimeID,
-		&i.WorkDir,
-		&i.JoinedAt,
-		&i.RemovedAt,
-	)
-	return i, err
-}
-
-const createChatSystemMessage = `-- name: CreateChatSystemMessage :one
-INSERT INTO chat_message (chat_session_id, role, content, message_type, metadata)
-VALUES ($1, 'system', $2, $3, $4)
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, agent_id, message_type, metadata
-`
-
-type CreateChatSystemMessageParams struct {
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	Content       string      `json:"content"`
-	MessageType   string      `json:"message_type"`
-	Metadata      []byte      `json:"metadata"`
-}
-
-func (q *Queries) CreateChatSystemMessage(ctx context.Context, arg CreateChatSystemMessageParams) (ChatMessage, error) {
-	row := q.db.QueryRow(ctx, createChatSystemMessage,
-		arg.ChatSessionID,
-		arg.Content,
-		arg.MessageType,
-		arg.Metadata,
-	)
-	var i ChatMessage
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.Role,
-		&i.Content,
-		&i.TaskID,
-		&i.CreatedAt,
-		&i.FailureReason,
-		&i.ElapsedMs,
-		&i.AgentID,
-		&i.MessageType,
-		&i.Metadata,
-	)
-	return i, err
-}
-
-const createExecutionPlan = `-- name: CreateExecutionPlan :one
-INSERT INTO chat_execution_plan (chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at
-`
-
-type CreateExecutionPlanParams struct {
-	ChatSessionID       pgtype.UUID `json:"chat_session_id"`
-	RootMessageID       pgtype.UUID `json:"root_message_id"`
-	OrchestratorAgentID pgtype.UUID `json:"orchestrator_agent_id"`
-	Status              string      `json:"status"`
-	ExecutionMode       string      `json:"execution_mode"`
-}
-
-func (q *Queries) CreateExecutionPlan(ctx context.Context, arg CreateExecutionPlanParams) (ChatExecutionPlan, error) {
-	row := q.db.QueryRow(ctx, createExecutionPlan,
-		arg.ChatSessionID,
-		arg.RootMessageID,
-		arg.OrchestratorAgentID,
-		arg.Status,
-		arg.ExecutionMode,
-	)
-	var i ChatExecutionPlan
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.RootMessageID,
-		&i.OrchestratorAgentID,
-		&i.Status,
-		&i.ExecutionMode,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getExecutionPlan = `-- name: GetExecutionPlan :one
-SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan WHERE id = $1
-`
-
-func (q *Queries) GetExecutionPlan(ctx context.Context, id pgtype.UUID) (ChatExecutionPlan, error) {
-	row := q.db.QueryRow(ctx, getExecutionPlan, id)
-	var i ChatExecutionPlan
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.RootMessageID,
-		&i.OrchestratorAgentID,
-		&i.Status,
-		&i.ExecutionMode,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getExecutionPlanForSession = `-- name: GetExecutionPlanForSession :one
-SELECT ep.id, ep.chat_session_id, ep.root_message_id, ep.orchestrator_agent_id, ep.status, ep.execution_mode, ep.created_at, ep.updated_at FROM chat_execution_plan ep
-JOIN chat_session cs ON cs.id = ep.chat_session_id
-WHERE ep.id = $1 AND cs.workspace_id = $2 AND cs.creator_id = $3
-`
-
-type GetExecutionPlanForSessionParams struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	CreatorID   pgtype.UUID `json:"creator_id"`
-}
-
-func (q *Queries) GetExecutionPlanForSession(ctx context.Context, arg GetExecutionPlanForSessionParams) (ChatExecutionPlan, error) {
-	row := q.db.QueryRow(ctx, getExecutionPlanForSession, arg.ID, arg.WorkspaceID, arg.CreatorID)
-	var i ChatExecutionPlan
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.RootMessageID,
-		&i.OrchestratorAgentID,
-		&i.Status,
-		&i.ExecutionMode,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getActivePlanBySession = `-- name: GetActivePlanBySession :one
-SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
-WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetActivePlanBySession(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
-	row := q.db.QueryRow(ctx, getActivePlanBySession, chatSessionID)
-	var i ChatExecutionPlan
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.RootMessageID,
-		&i.OrchestratorAgentID,
-		&i.Status,
-		&i.ExecutionMode,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getActivePlanBySessionForUpdate = `-- name: GetActivePlanBySessionForUpdate :one
-SELECT id, chat_session_id, root_message_id, orchestrator_agent_id, status, execution_mode, created_at, updated_at FROM chat_execution_plan
-WHERE chat_session_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed')
-ORDER BY created_at DESC
-LIMIT 1
-FOR UPDATE
-`
-
-func (q *Queries) GetActivePlanBySessionForUpdate(ctx context.Context, chatSessionID pgtype.UUID) (ChatExecutionPlan, error) {
-	row := q.db.QueryRow(ctx, getActivePlanBySessionForUpdate, chatSessionID)
-	var i ChatExecutionPlan
-	err := row.Scan(
-		&i.ID,
-		&i.ChatSessionID,
-		&i.RootMessageID,
-		&i.OrchestratorAgentID,
-		&i.Status,
-		&i.ExecutionMode,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updatePlanStatus = `-- name: UpdatePlanStatus :exec
-UPDATE chat_execution_plan SET status = $2, updated_at = now() WHERE id = $1
-`
-
-type UpdatePlanStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
-}
-
-func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusParams) error {
-	_, err := q.db.Exec(ctx, updatePlanStatus, arg.ID, arg.Status)
-	return err
-}
-
-const createExecutionStep = `-- name: CreateExecutionStep :one
-INSERT INTO chat_execution_step (plan_id, chat_session_id, sequence, agent_id, status, planned_prompt)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at
-`
-
-type CreateExecutionStepParams struct {
-	PlanID        pgtype.UUID `json:"plan_id"`
-	ChatSessionID pgtype.UUID `json:"chat_session_id"`
-	Sequence      int32       `json:"sequence"`
-	AgentID       pgtype.UUID `json:"agent_id"`
-	Status        string      `json:"status"`
-	PlannedPrompt string      `json:"planned_prompt"`
-}
-
-func (q *Queries) CreateExecutionStep(ctx context.Context, arg CreateExecutionStepParams) (ChatExecutionStep, error) {
-	row := q.db.QueryRow(ctx, createExecutionStep,
-		arg.PlanID,
-		arg.ChatSessionID,
-		arg.Sequence,
-		arg.AgentID,
-		arg.Status,
-		arg.PlannedPrompt,
-	)
-	var i ChatExecutionStep
-	err := row.Scan(
-		&i.ID,
-		&i.PlanID,
-		&i.ChatSessionID,
-		&i.Sequence,
-		&i.AgentID,
-		&i.Status,
-		&i.PlannedPrompt,
-		&i.ApprovedPrompt,
-		&i.TaskID,
-		&i.ParentStepID,
-		&i.ParallelGroupID,
-		&i.BaseRevision,
-		&i.ResultRevision,
-		&i.ArtifactSummary,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getExecutionStep = `-- name: GetExecutionStep :one
-SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step WHERE id = $1
-`
-
-func (q *Queries) GetExecutionStep(ctx context.Context, id pgtype.UUID) (ChatExecutionStep, error) {
-	row := q.db.QueryRow(ctx, getExecutionStep, id)
-	var i ChatExecutionStep
-	err := row.Scan(
-		&i.ID,
-		&i.PlanID,
-		&i.ChatSessionID,
-		&i.Sequence,
-		&i.AgentID,
-		&i.Status,
-		&i.PlannedPrompt,
-		&i.ApprovedPrompt,
-		&i.TaskID,
-		&i.ParentStepID,
-		&i.ParallelGroupID,
-		&i.BaseRevision,
-		&i.ResultRevision,
-		&i.ArtifactSummary,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const listStepsByPlanWithAgent = `-- name: ListStepsByPlanWithAgent :many
-SELECT es.id, es.plan_id, es.chat_session_id, es.sequence, es.agent_id, es.status, es.planned_prompt, es.approved_prompt, es.task_id, es.parent_step_id, es.parallel_group_id, es.base_revision, es.result_revision, es.artifact_summary, es.created_at, es.updated_at, a.name AS agent_name
-FROM chat_execution_step es
-JOIN agent a ON a.id = es.agent_id
-WHERE es.plan_id = $1
-ORDER BY es.sequence ASC
-`
-
-type ListStepsByPlanWithAgentRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	PlanID          pgtype.UUID        `json:"plan_id"`
-	ChatSessionID   pgtype.UUID        `json:"chat_session_id"`
-	Sequence        int32              `json:"sequence"`
-	AgentID         pgtype.UUID        `json:"agent_id"`
-	Status          string             `json:"status"`
-	PlannedPrompt   string             `json:"planned_prompt"`
-	ApprovedPrompt  pgtype.Text        `json:"approved_prompt"`
-	TaskID          pgtype.UUID        `json:"task_id"`
-	ParentStepID    pgtype.UUID        `json:"parent_step_id"`
-	ParallelGroupID pgtype.UUID        `json:"parallel_group_id"`
-	BaseRevision    pgtype.Text        `json:"base_revision"`
-	ResultRevision  pgtype.Text        `json:"result_revision"`
-	ArtifactSummary []byte             `json:"artifact_summary"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	AgentName       string             `json:"agent_name"`
-}
-
-func (q *Queries) ListStepsByPlanWithAgent(ctx context.Context, planID pgtype.UUID) ([]ListStepsByPlanWithAgentRow, error) {
-	rows, err := q.db.Query(ctx, listStepsByPlanWithAgent, planID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListStepsByPlanWithAgentRow
-	for rows.Next() {
-		var i ListStepsByPlanWithAgentRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PlanID,
-			&i.ChatSessionID,
-			&i.Sequence,
-			&i.AgentID,
-			&i.Status,
-			&i.PlannedPrompt,
-			&i.ApprovedPrompt,
-			&i.TaskID,
-			&i.ParentStepID,
-			&i.ParallelGroupID,
-			&i.BaseRevision,
-			&i.ResultRevision,
-			&i.ArtifactSummary,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.AgentName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateStepStatus = `-- name: UpdateStepStatus :exec
-UPDATE chat_execution_step SET status = $2, updated_at = now() WHERE id = $1
-`
-
-type UpdateStepStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
-}
-
-func (q *Queries) UpdateStepStatus(ctx context.Context, arg UpdateStepStatusParams) error {
-	_, err := q.db.Exec(ctx, updateStepStatus, arg.ID, arg.Status)
-	return err
-}
-
-const approveStep = `-- name: ApproveStep :one
-UPDATE chat_execution_step
-SET status = 'queued', approved_prompt = $2, task_id = $3, updated_at = now()
-WHERE id = $1 AND status = 'awaiting_approval'
-RETURNING id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at
-`
-
-type ApproveStepParams struct {
-	ID             pgtype.UUID `json:"id"`
-	ApprovedPrompt pgtype.Text `json:"approved_prompt"`
-	TaskID         pgtype.UUID `json:"task_id"`
-}
-
-func (q *Queries) ApproveStep(ctx context.Context, arg ApproveStepParams) (ChatExecutionStep, error) {
-	row := q.db.QueryRow(ctx, approveStep, arg.ID, arg.ApprovedPrompt, arg.TaskID)
-	var i ChatExecutionStep
-	err := row.Scan(
-		&i.ID,
-		&i.PlanID,
-		&i.ChatSessionID,
-		&i.Sequence,
-		&i.AgentID,
-		&i.Status,
-		&i.PlannedPrompt,
-		&i.ApprovedPrompt,
-		&i.TaskID,
-		&i.ParentStepID,
-		&i.ParallelGroupID,
-		&i.BaseRevision,
-		&i.ResultRevision,
-		&i.ArtifactSummary,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getNextPlannedStep = `-- name: GetNextPlannedStep :one
-SELECT id, plan_id, chat_session_id, sequence, agent_id, status, planned_prompt, approved_prompt, task_id, parent_step_id, parallel_group_id, base_revision, result_revision, artifact_summary, created_at, updated_at FROM chat_execution_step
-WHERE plan_id = $1 AND status = 'planned'
-ORDER BY sequence ASC
-LIMIT 1
-`
-
-func (q *Queries) GetNextPlannedStep(ctx context.Context, planID pgtype.UUID) (ChatExecutionStep, error) {
-	row := q.db.QueryRow(ctx, getNextPlannedStep, planID)
-	var i ChatExecutionStep
-	err := row.Scan(
-		&i.ID,
-		&i.PlanID,
-		&i.ChatSessionID,
-		&i.Sequence,
-		&i.AgentID,
-		&i.Status,
-		&i.PlannedPrompt,
-		&i.ApprovedPrompt,
-		&i.TaskID,
-		&i.ParentStepID,
-		&i.ParallelGroupID,
-		&i.BaseRevision,
-		&i.ResultRevision,
-		&i.ArtifactSummary,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const cancelNonTerminalStepsByPlan = `-- name: CancelNonTerminalStepsByPlan :exec
-UPDATE chat_execution_step
-SET status = 'cancelled', updated_at = now()
-WHERE plan_id = $1 AND status NOT IN ('completed', 'cancelled', 'failed', 'skipped')
-`
-
-func (q *Queries) CancelNonTerminalStepsByPlan(ctx context.Context, planID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, cancelNonTerminalStepsByPlan, planID)
-	return err
 }

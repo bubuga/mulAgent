@@ -134,6 +134,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 
 	taskSvc := service.NewTaskService(queries, txStarter, hub, bus, daemonHub)
 	taskSvc.Analytics = analyticsClient
+	planSvc := service.NewChatPlanService(queries, txStarter, bus)
+	planSvc.SetTaskNotifier(taskSvc)
+	taskSvc.SetStepLifecycle(planSvc)
 	return &Handler{
 		Queries:               queries,
 		DB:                    executor,
@@ -142,7 +145,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonHub:             daemonHub,
 		Bus:                   bus,
 		TaskService:           taskSvc,
-		PlanService:           service.NewChatPlanService(queries, txStarter, bus),
+		PlanService:           planSvc,
 		AutopilotService:      service.NewAutopilotService(queries, txStarter, bus, taskSvc),
 		EmailService:          emailService,
 		UpdateStore:           NewInMemoryUpdateStore(),

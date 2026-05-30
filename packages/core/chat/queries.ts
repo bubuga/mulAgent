@@ -21,6 +21,8 @@ export const chatKeys = {
   pendingTasks: (wsId: string) => [...chatKeys.all(wsId), "pending-tasks"] as const,
   /** Per-task execution messages — shared with issue agent cards. */
   taskMessages: (taskId: string) => ["task-messages", taskId] as const,
+  /** Active plan with steps and attempts for a session. */
+  activePlan: (sessionId: string) => ["chat", "active-plan", sessionId] as const,
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -100,6 +102,19 @@ export function pendingChatTasksOptions(wsId: string) {
   return queryOptions({
     queryKey: chatKeys.pendingTasks(wsId),
     queryFn: () => api.listPendingChatTasks(),
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Active plan for a chat session — includes steps and attempt history.
+ * Returns { plan: null } when no active plan exists.
+ */
+export function activePlanOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: chatKeys.activePlan(sessionId),
+    queryFn: () => api.getActivePlan(sessionId),
+    enabled: !!sessionId,
     staleTime: Infinity,
   });
 }

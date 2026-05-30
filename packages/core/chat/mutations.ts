@@ -201,3 +201,53 @@ export function useUnarchiveChatSession() {
     },
   });
 }
+
+// PR7: Step execution mutations
+
+function invalidateStepQueries(qc: ReturnType<typeof useQueryClient>, sessionId: string) {
+  qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+  qc.invalidateQueries({ queryKey: chatKeys.pendingTask(sessionId) });
+  qc.invalidateQueries({ queryKey: chatKeys.activePlan(sessionId) });
+}
+
+export function useContinueStep(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stepId, prompt }: { stepId: string; prompt?: string }) =>
+      api.continueStep(stepId, prompt),
+    onSettled: () => invalidateStepQueries(qc, sessionId),
+  });
+}
+
+export function useSkipStep(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stepId: string) => api.skipStep(stepId),
+    onSettled: () => invalidateStepQueries(qc, sessionId),
+  });
+}
+
+export function useCancelStep(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stepId: string) => api.cancelStep(stepId),
+    onSettled: () => invalidateStepQueries(qc, sessionId),
+  });
+}
+
+export function useRetryStep(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stepId, prompt }: { stepId: string; prompt?: string }) =>
+      api.retryStep(stepId, prompt),
+    onSettled: () => invalidateStepQueries(qc, sessionId),
+  });
+}
+
+export function useRequestReplan(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => api.requestReplan(planId),
+    onSettled: () => invalidateStepQueries(qc, sessionId),
+  });
+}

@@ -9,8 +9,39 @@
     "placeholder_archived": "此会话已归档",
     "placeholder_named": "告诉 {{name}} 该做什么...",
     "placeholder_default": "告诉我该做什么...",
+    "raw_agent_mention_error": "请从 @ 下拉菜单选择智能体，确保消息能正确路由。",
     "send_tooltip": "发送",
     "stop_tooltip": "停止"
+  },
+  "shell": {
+    "title": "对话",
+    "search_placeholder": "搜索对话...",
+    "new_chat_aria": "新对话",
+    "select_conversation": "选择一个对话",
+    "navigation_title": "导航",
+    "navigation_aria": "导航菜单"
+  },
+  "session_list": {
+    "no_matching": "没有匹配的对话",
+    "empty": "暂无对话",
+    "group_badge": "群聊",
+    "untitled": "无标题",
+    "time_now": "刚刚"
+  },
+  "new_chat": {
+    "title": "新建对话",
+    "direct_tab": "直接对话",
+    "group_tab": "群聊",
+    "no_agents": "暂无可用智能体",
+    "title_optional": "标题（可选）",
+    "group_title_optional": "群聊标题（可选）",
+    "creating": "创建中...",
+    "create_direct": "创建直接对话",
+    "create_group": "创建群聊",
+    "select_agents": "至少选择 2 个智能体",
+    "next_orchestrator": "下一步：选择 Orchestrator",
+    "back_agents": "返回智能体选择",
+    "choose_orchestrator": "从已选智能体中选择 Orchestrator"
   },
   "message_list": {
     "show_details": "查看详情",
@@ -21,9 +52,36 @@
     "tool_result_named": "{{tool}} 结果：",
     "tool_result_unnamed": "结果：",
     "process_steps_other": "{{count}} 步",
+    "members_other": "{{count}} 个成员",
     "copy_action": "复制",
     "copied_toast": "已复制",
-    "copy_failed_toast": "复制失败"
+    "copy_failed_toast": "复制失败",
+    "orchestrator_badge": "Orchestrator"
+  },
+  "step_confirmation": {
+    "title": "Step {{sequence}}：{{agentName}}",
+    "status": {
+      "awaiting_approval": "等待确认",
+      "queued": "排队中",
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "skipped": "已跳过"
+    },
+    "completed": "Step 已成功完成。",
+    "skipped": "Step 已跳过。",
+    "prompt_label": "Prompt",
+    "prompt_placeholder": "Step prompt...",
+    "continue": "继续",
+    "skip": "跳过",
+    "running_message": "Step {{sequence}} 正在执行...",
+    "queued_message": "Step {{sequence}} 已排队等待执行。",
+    "cancel": "取消",
+    "retry_prompt_label": "Prompt（可编辑后重试）",
+    "retry": "重试",
+    "request_replan": "请求重新规划",
+    "attempts_other": "{{count}} 次尝试"
   },
   "session_history": {
     "untitled": "无标题",

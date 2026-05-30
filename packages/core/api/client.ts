@@ -61,6 +61,7 @@ import type {
   ChatMessage,
   ChatPendingTask,
   PendingChatTasksResponse,
+  ActivePlanResponse,
   SendChatMessageResponse,
   Project,
   CreateProjectRequest,
@@ -1399,6 +1400,38 @@ export class ApiClient {
 
   async cancelTaskById(taskId: string): Promise<void> {
     await this.fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+  }
+
+  // PR7: Step execution methods
+
+  async continueStep(stepId: string, approvedPrompt?: string): Promise<unknown> {
+    return this.fetch(`/api/chat/steps/${stepId}/continue`, {
+      method: "POST",
+      body: JSON.stringify({ approved_prompt: approvedPrompt }),
+    });
+  }
+
+  async skipStep(stepId: string): Promise<void> {
+    await this.fetch(`/api/chat/steps/${stepId}/skip`, { method: "POST" });
+  }
+
+  async cancelStep(stepId: string): Promise<void> {
+    await this.fetch(`/api/chat/steps/${stepId}/cancel`, { method: "POST" });
+  }
+
+  async retryStep(stepId: string, approvedPrompt?: string): Promise<unknown> {
+    return this.fetch(`/api/chat/steps/${stepId}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ approved_prompt: approvedPrompt }),
+    });
+  }
+
+  async requestReplan(planId: string): Promise<void> {
+    await this.fetch(`/api/chat/plans/${planId}/request-replan`, { method: "POST" });
+  }
+
+  async getActivePlan(sessionId: string): Promise<ActivePlanResponse> {
+    return this.fetch(`/api/chat/sessions/${sessionId}/active-plan`);
   }
 
   async listAttachments(issueId: string): Promise<Attachment[]> {

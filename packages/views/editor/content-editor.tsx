@@ -44,6 +44,7 @@ import { useWorkspaceSlug } from "@multica/core/paths";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Attachment } from "@multica/core/types";
 import { createEditorExtensions } from "./extensions";
+import type { MentionSuggestionContext } from "./extensions/mention-suggestion";
 import { uploadAndInsertFile } from "./extensions/file-upload";
 import { preprocessMarkdown } from "./utils/preprocess";
 import { openLink, isMentionHref } from "./utils/link-handler";
@@ -96,6 +97,7 @@ interface ContentEditorProps {
    * prompts) but *preserving* an existing one still matters.
    */
   disableMentions?: boolean;
+  mentionContext?: MentionSuggestionContext;
   /**
    * Attachments referenced by this content. The download buttons on file
    * cards and images inside the editor look up an attachment by `url` and
@@ -139,6 +141,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       submitOnEnter = false,
       currentIssueId,
       disableMentions = false,
+      mentionContext,
       attachments,
     },
     ref,
@@ -182,6 +185,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
         onUploadFileRef,
         submitOnEnter,
         disableMentions,
+        mentionContext,
       }),
       onUpdate: ({ editor: ed }) => {
         if (!onUpdateRef.current) return;

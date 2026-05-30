@@ -36,7 +36,10 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import type { AnyExtension } from "@tiptap/core";
 import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import { BaseMentionExtension } from "./mention-extension";
-import { createMentionSuggestion } from "./mention-suggestion";
+import {
+  createMentionSuggestion,
+  type MentionSuggestionContext,
+} from "./mention-suggestion";
 import { CodeBlockView } from "./code-block-view";
 import { PatchedListItem } from "./list-item";
 import { createMarkdownPasteExtension } from "./markdown-paste";
@@ -95,6 +98,7 @@ export interface EditorExtensionsOptions {
    * system prompts) but *preserving* an existing one still matters.
    */
   disableMentions?: boolean;
+  mentionContext?: MentionSuggestionContext;
 }
 
 export function createEditorExtensions(
@@ -139,9 +143,14 @@ export function createEditorExtensions(
     BaseMentionExtension.configure({
       HTMLAttributes: { class: "mention" },
       ...(options.disableMentions
-        ? { suggestion: { allow: () => false } }
+          ? { suggestion: { allow: () => false } }
         : options.queryClient
-          ? { suggestion: createMentionSuggestion(options.queryClient) }
+          ? {
+              suggestion: createMentionSuggestion(
+                options.queryClient,
+                options.mentionContext,
+              ),
+            }
           : {}),
     }),
     Typography,

@@ -355,6 +355,10 @@ export function useRealtimeSync(
       // Chat events are handled explicitly below; do not double-invalidate.
       "chat:message", "chat:done", "chat:session_read", "chat:session_deleted",
       "chat:session_updated",
+      // PR7: step/plan lifecycle events
+      "chat:plan_created", "chat:plan_cancelled", "chat:plan_completed",
+      "chat:step_awaiting_approval", "chat:step_queued", "chat:step_running",
+      "chat:step_completed", "chat:step_failed", "chat:step_cancelled", "chat:step_skipped",
       // task:message stays out of the prefix path because it fires per
       // streamed message during a long run — invalidating the snapshot on
       // every message would flood the network. Specific chat handlers below
@@ -887,6 +891,23 @@ export function useRealtimeSync(
       }
     });
 
+    // PR7: Step/plan lifecycle events — invalidate messages, pending task, and active plan.
+    const stepEvents = [
+      "chat:plan_created", "chat:plan_cancelled", "chat:plan_completed",
+      "chat:step_awaiting_approval", "chat:step_queued", "chat:step_running",
+      "chat:step_completed", "chat:step_failed", "chat:step_cancelled", "chat:step_skipped",
+    ] as const;
+    const unsubStepHandlers = stepEvents.map((evt) =>
+      ws.on(evt, (p) => {
+        const payload = p as { chat_session_id?: string };
+        if (payload.chat_session_id) {
+          qc.invalidateQueries({ queryKey: chatKeys.messages(payload.chat_session_id) });
+          qc.invalidateQueries({ queryKey: chatKeys.pendingTask(payload.chat_session_id) });
+          qc.invalidateQueries({ queryKey: chatKeys.activePlan(payload.chat_session_id) });
+        }
+      }),
+    );
+
     return () => {
       unsubAny();
       unsubIssueUpdated();
@@ -925,6 +946,7 @@ export function useRealtimeSync(
       unsubChatSessionRead();
       unsubChatSessionDeleted();
       unsubChatSessionUpdated();
+      unsubStepHandlers.forEach((unsub) => unsub());
       timers.forEach(clearTimeout);
       timers.clear();
     };

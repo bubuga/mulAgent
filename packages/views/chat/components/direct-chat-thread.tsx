@@ -110,6 +110,7 @@ export function DirectChatThread({ sessionId }: DirectChatThreadProps) {
         messages={messages}
         pendingTask={pendingTask}
         availability={availability}
+        sessionId={sessionId}
       />
       <ChatInput
         onSend={handleSend}

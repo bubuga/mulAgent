@@ -25,6 +25,7 @@ import type {
   MemberWithUser,
   Agent,
   Squad,
+  ChatParticipant,
 } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
@@ -53,10 +54,17 @@ export interface MentionItem {
   status?: IssueStatus;
 }
 
+export interface MentionSuggestionContext {
+  kind: "group-chat";
+  participants: ChatParticipant[];
+  orchestratorAgentId?: string | null;
+}
+
 interface MentionListProps {
   items: MentionItem[];
   query: string;
   command: (item: MentionItem) => void;
+  enableIssueSearch?: boolean;
 }
 
 export interface MentionListRef {
@@ -120,7 +128,7 @@ function mergeMentionItems(
 }
 
 export const MentionList = forwardRef<MentionListRef, MentionListProps>(
-  function MentionList({ items, query, command }, ref) {
+  function MentionList({ items, query, command, enableIssueSearch = true }, ref) {
     const { t } = useT("editor");
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [serverIssueItems, setServerIssueItems] = useState<MentionItem[]>([]);
@@ -133,7 +141,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
       const q = normalizedQuery;
       setServerIssueItems([]);
 
-      if (!q) {
+      if (!enableIssueSearch || !q) {
         setIsSearchingIssues(false);
         setSearchedIssueQuery("");
         return;
@@ -178,7 +186,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
         clearTimeout(timer);
         controller.abort();
       };
-    }, [normalizedQuery]);
+    }, [enableIssueSearch, normalizedQuery]);
 
     const displayItems = useMemo(() => {
       const currentServerIssueItems =
@@ -342,9 +350,9 @@ function MentionRow({
         {item.type === "all" ? t(($) => $.mention.all_members) : item.label}
       </span>
       {item.type === "agent" && (
-        // "Agent" is a glossary-protected product term — kept un-translated.
-        // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5">Agent</Badge>
+        <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5">
+          {item.description === "Orchestrator" ? "Orchestrator" : "Agent"}
+        </Badge>
       )}
       {item.type === "squad" && (
         // "Squad" is a glossary-protected product term — kept un-translated.
@@ -369,16 +377,34 @@ function issueToMention(i: Pick<Issue, "id" | "identifier" | "title" | "status">
   };
 }
 
-export function createMentionSuggestion(qc: QueryClient): Omit<
-  SuggestionOptions<MentionItem>,
-  "editor"
-> {
+export function createMentionSuggestion(
+  qc: QueryClient,
+  context?: MentionSuggestionContext,
+): Omit<SuggestionOptions<MentionItem>, "editor"> {
   // Renderer/popup instances live in this closure so each ContentEditor owns
   // its own TipTap suggestion popup lifecycle.
   let renderer: ReactRenderer<MentionListRef> | null = null;
   let popup: HTMLDivElement | null = null;
 
   function buildSyncItems(query: string): MentionItem[] {
+    if (context?.kind === "group-chat") {
+      const q = query.toLowerCase();
+      return context.participants
+        .filter((p) => {
+          const name = p.name ?? p.agent_id;
+          return name.toLowerCase().includes(q) || matchesPinyin(name, q);
+        })
+        .map((p) => ({
+          id: p.agent_id,
+          label: p.name ?? p.agent_id,
+          type: "agent" as const,
+          description:
+            p.role === "orchestrator" || p.agent_id === context.orchestratorAgentId
+              ? "Orchestrator"
+              : undefined,
+        }));
+    }
+
     // Read workspace id imperatively because this runs in TipTap factory scope
     // (outside React render). getCurrentWsId() is the non-React singleton set
     // by the URL-driven workspace layout.
@@ -464,6 +490,7 @@ export function createMentionSuggestion(qc: QueryClient): Omit<
               items: props.items,
               query: props.query,
               command: props.command,
+              enableIssueSearch: context?.kind !== "group-chat",
             },
             editor: props.editor,
           });
@@ -482,6 +509,7 @@ export function createMentionSuggestion(qc: QueryClient): Omit<
             items: props.items,
             query: props.query,
             command: props.command,
+            enableIssueSearch: context?.kind !== "group-chat",
           });
           if (popup) updatePosition(popup, props.clientRect);
         },

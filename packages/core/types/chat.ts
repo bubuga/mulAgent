@@ -99,3 +99,40 @@ export interface ChatPendingTask {
   status?: string;
   created_at?: string;
 }
+
+// PR7: Step execution types
+
+export interface StepAttempt {
+  id: string;
+  attempt_number: number;
+  task_id?: string;
+  approved_prompt: string;
+  status: string;
+  failure_reason?: string;
+  error?: string;
+  created_at: string;
+}
+
+export interface ExecutionStep {
+  id: string;
+  plan_id: string;
+  sequence: number;
+  agent_id: string;
+  agent_name: string;
+  status: string;
+  planned_prompt: string;
+  approved_prompt?: string;
+  attempts: StepAttempt[];
+}
+
+export interface ExecutionPlan {
+  id: string;
+  session_id: string;
+  status: string;
+  steps: ExecutionStep[];
+  created_at: string;
+}
+
+export interface ActivePlanResponse {
+  plan: ExecutionPlan | null;
+}

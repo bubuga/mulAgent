@@ -194,7 +194,9 @@ type AgentTaskResponse struct {
 	// Group chat orchestrator fields — populated when the task targets a group chat.
 	ChatSessionKind   string                  `json:"chat_session_kind,omitempty"`
 	IsOrchestrator    bool                    `json:"is_orchestrator,omitempty"`
+	IsExecutionStep   bool                    `json:"is_execution_step,omitempty"`
 	GroupParticipants []GroupParticipantResponse `json:"group_participants,omitempty"`
+	HandoffBundle     *ChatHandoffBundleResponse `json:"handoff_bundle,omitempty"`
 }
 
 // GroupParticipantResponse describes a group chat participant in the claim response.
@@ -202,6 +204,64 @@ type GroupParticipantResponse struct {
 	AgentID   string `json:"agent_id"`
 	AgentName string `json:"agent_name"`
 	Role      string `json:"role"`
+}
+
+// ChatHandoffBundleResponse is the structured handoff context returned for
+// step-linked tasks. The daemon-side mirror lives in internal/daemon/types.go.
+type ChatHandoffBundleResponse struct {
+	Version           int                       `json:"version"`
+	ChatSessionID     string                    `json:"chat_session_id"`
+	PlanID            string                    `json:"plan_id"`
+	StepID            string                    `json:"step_id"`
+	AttemptID         string                    `json:"attempt_id"`
+	AttemptNumber     int32                     `json:"attempt_number"`
+	Sequence          int32                     `json:"sequence"`
+	AgentID           string                    `json:"agent_id"`
+	AgentName         string                    `json:"agent_name"`
+	ApprovedPrompt    string                    `json:"approved_prompt"`
+	RecentMessages    []HandoffMessage          `json:"recent_messages"`
+	PlanSteps         []HandoffPlanStep         `json:"plan_steps"`
+	PreviousSteps     []HandoffPreviousStep     `json:"previous_steps"`
+	ArtifactSummaries []HandoffArtifactSummary  `json:"artifact_summaries,omitempty"`
+	Revisions         HandoffRevisions          `json:"revisions"`
+	Truncated         bool                      `json:"truncated,omitempty"`
+	Warnings          []string                  `json:"warnings,omitempty"`
+}
+
+type HandoffMessage struct {
+	Role        string `json:"role"`
+	AgentID     string `json:"agent_id,omitempty"`
+	Content     string `json:"content"`
+	MessageType string `json:"message_type,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type HandoffPlanStep struct {
+	Sequence       int32  `json:"sequence"`
+	AgentID        string `json:"agent_id"`
+	AgentName      string `json:"agent_name"`
+	Status         string `json:"status"`
+	PromptSummary  string `json:"prompt_summary"`
+	AttemptNumber  int32  `json:"attempt_number,omitempty"`
+	ResultRevision string `json:"result_revision,omitempty"`
+}
+
+type HandoffPreviousStep struct {
+	Sequence       int32  `json:"sequence"`
+	AgentName      string `json:"agent_name"`
+	Status         string `json:"status"`
+	ResultSummary  string `json:"result_summary"`
+	ResultRevision string `json:"result_revision,omitempty"`
+}
+
+type HandoffArtifactSummary struct {
+	StepSequence int32  `json:"step_sequence"`
+	Summary      string `json:"summary"` // compact JSON string, truncated (D13)
+}
+
+type HandoffRevisions struct {
+	Base   *service.TaskRevisionInfo `json:"base,omitempty"`
+	Result *service.TaskRevisionInfo `json:"result,omitempty"`
 }
 
 // ChatAttachmentMeta is the structured attachment metadata embedded in

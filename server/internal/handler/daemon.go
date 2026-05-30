@@ -1346,26 +1346,58 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if !task.ForceFreshSession {
-				// Resume chat sessions only when the stored pointer was produced
-				// by the same runtime as the claiming task. When the chat_session
-				// pointer is missing (legacy NULL runtime_id), stale (last task
-				// failed before reporting completion), or runtime-mismatched, fall
-				// back to the most recent task row that recorded a session_id —
-				// otherwise a single failed turn would silently drop the entire
-				// conversation memory on the next message. The fallback also
-				// requires runtime to match.
-				if cs.SessionID.Valid && cs.RuntimeID.Valid && cs.RuntimeID == task.RuntimeID {
-					resp.PriorSessionID = cs.SessionID.String
-				}
-				if cs.WorkDir.Valid {
-					resp.PriorWorkDir = cs.WorkDir.String
-				}
-				if prior, err := h.Queries.GetLastChatTaskSession(r.Context(), cs.ID); err == nil && prior.SessionID.Valid {
-					if resp.PriorSessionID == "" && prior.RuntimeID == task.RuntimeID {
-						resp.PriorSessionID = prior.SessionID.String
+				if cs.Kind == "group" {
+					// PR8: Group chat — participant-specific session isolation (D4).
+					// Never use chat_session.session_id (shared pointer is for legacy direct only).
+					if agentState, err := h.Queries.GetChatSessionAgentState(r.Context(), db.GetChatSessionAgentStateParams{
+						ChatSessionID: cs.ID,
+						AgentID:       task.AgentID,
+					}); err == nil && agentState.SessionID.Valid && agentState.RuntimeID.Valid && agentState.RuntimeID == task.RuntimeID {
+						resp.PriorSessionID = agentState.SessionID.String
 					}
-					if prior.WorkDir.Valid && resp.PriorWorkDir == "" {
-						resp.PriorWorkDir = prior.WorkDir.String
+					if resp.PriorSessionID == "" {
+						if prior, err := h.Queries.GetLastChatAgentTaskSession(r.Context(), db.GetLastChatAgentTaskSessionParams{
+							ChatSessionID: cs.ID,
+							AgentID:       task.AgentID,
+						}); err == nil && prior.SessionID.Valid && prior.RuntimeID.Valid && prior.RuntimeID == task.RuntimeID {
+							resp.PriorSessionID = prior.SessionID.String
+						}
+					}
+					// PriorWorkDir: shared work_dir first, then participant-specific, then task history.
+					if cs.WorkDir.Valid {
+						resp.PriorWorkDir = cs.WorkDir.String
+					}
+					if resp.PriorWorkDir == "" {
+						if agentState, err := h.Queries.GetChatSessionAgentState(r.Context(), db.GetChatSessionAgentStateParams{
+							ChatSessionID: cs.ID,
+							AgentID:       task.AgentID,
+						}); err == nil && agentState.WorkDir.Valid {
+							resp.PriorWorkDir = agentState.WorkDir.String
+						}
+					}
+					if resp.PriorWorkDir == "" {
+						if prior, err := h.Queries.GetLastChatAgentTaskSession(r.Context(), db.GetLastChatAgentTaskSessionParams{
+							ChatSessionID: cs.ID,
+							AgentID:       task.AgentID,
+						}); err == nil && prior.WorkDir.Valid {
+							resp.PriorWorkDir = prior.WorkDir.String
+						}
+					}
+				} else {
+					// Legacy direct chat: existing logic unchanged.
+					if cs.SessionID.Valid && cs.RuntimeID.Valid && cs.RuntimeID == task.RuntimeID {
+						resp.PriorSessionID = cs.SessionID.String
+					}
+					if cs.WorkDir.Valid {
+						resp.PriorWorkDir = cs.WorkDir.String
+					}
+					if prior, err := h.Queries.GetLastChatTaskSession(r.Context(), cs.ID); err == nil && prior.SessionID.Valid {
+						if resp.PriorSessionID == "" && prior.RuntimeID == task.RuntimeID {
+							resp.PriorSessionID = prior.SessionID.String
+						}
+						if prior.WorkDir.Valid && resp.PriorWorkDir == "" {
+							resp.PriorWorkDir = prior.WorkDir.String
+						}
 					}
 				}
 			}
@@ -1395,6 +1427,25 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
+			}
+
+			// PR7: Step-linked tasks use the attempt's approved_prompt
+			// instead of the latest user message. Also disable Orchestrator
+			// mode so the agent executes the step instead of planning.
+			if attempt, attErr := h.Queries.GetStepAttemptByTaskID(r.Context(), task.ID); attErr == nil {
+				resp.ChatMessage = attempt.ApprovedPrompt
+				resp.ChatMessageAttachments = nil
+				resp.IsOrchestrator = false
+				resp.IsExecutionStep = true
+
+				// PR8: Build handoff bundle for step-linked tasks (D5).
+				bundle, bundleErr := buildHandoffBundle(r.Context(), h.Queries, task.ID)
+				if bundleErr != nil {
+					slog.Error("handoff bundle build failed", "task_id", uuidToString(task.ID), "error", bundleErr)
+					writeError(w, http.StatusInternalServerError, "failed to build handoff context")
+					return
+				}
+				resp.HandoffBundle = bundle
 			}
 		}
 	}
@@ -1643,10 +1694,14 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 
 // CompleteTask marks a running task as completed.
 type TaskCompleteRequest struct {
-	PRURL     string `json:"pr_url"`
-	Output    string `json:"output"`
-	SessionID string `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string `json:"work_dir"`   // working directory used during execution
+	PRURL            string                  `json:"pr_url"`
+	Output           string                  `json:"output"`
+	SessionID        string                  `json:"session_id"`
+	WorkDir          string                  `json:"work_dir"`
+	BranchName       string                  `json:"branch_name,omitempty"`
+	BaseRevision     *service.TaskRevisionInfo `json:"base_revision,omitempty"`
+	ResultRevision   *service.TaskRevisionInfo `json:"result_revision,omitempty"`
+	RevisionWarnings []string                `json:"revision_warnings,omitempty"`
 }
 
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
@@ -1663,8 +1718,30 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, _ := json.Marshal(req)
-	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir)
+	// D19: Build clean result payload — only include fields meaningful to UI/messages.
+	clean := map[string]any{}
+	if req.Output != "" {
+		clean["output"] = req.Output
+	}
+	if req.PRURL != "" {
+		clean["pr_url"] = req.PRURL
+	}
+	if req.BranchName != "" {
+		clean["branch_name"] = req.BranchName
+	}
+	result, _ := json.Marshal(clean)
+
+	// D3: Build revision update struct for service.
+	var revision *service.TaskRevisionUpdate
+	if req.BaseRevision != nil || req.ResultRevision != nil || req.RevisionWarnings != nil {
+		revision = &service.TaskRevisionUpdate{
+			BaseRevision:     req.BaseRevision,
+			ResultRevision:   req.ResultRevision,
+			RevisionWarnings: req.RevisionWarnings,
+		}
+	}
+
+	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir, revision)
 	if err != nil {
 		slog.Warn("complete task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1779,10 +1856,13 @@ func (h *Handler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 
 // FailTask marks a running task as failed.
 type TaskFailRequest struct {
-	Error         string `json:"error"`
-	SessionID     string `json:"session_id,omitempty"`
-	WorkDir       string `json:"work_dir,omitempty"`
-	FailureReason string `json:"failure_reason,omitempty"`
+	Error            string                  `json:"error"`
+	SessionID        string                  `json:"session_id,omitempty"`
+	WorkDir          string                  `json:"work_dir,omitempty"`
+	FailureReason    string                  `json:"failure_reason,omitempty"`
+	BaseRevision     *service.TaskRevisionInfo `json:"base_revision,omitempty"`
+	ResultRevision   *service.TaskRevisionInfo `json:"result_revision,omitempty"`
+	RevisionWarnings []string                `json:"revision_warnings,omitempty"`
 }
 
 func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
@@ -1799,7 +1879,17 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir, req.FailureReason)
+	// D3: Build revision update struct for service.
+	var revision *service.TaskRevisionUpdate
+	if req.BaseRevision != nil || req.ResultRevision != nil || req.RevisionWarnings != nil {
+		revision = &service.TaskRevisionUpdate{
+			BaseRevision:     req.BaseRevision,
+			ResultRevision:   req.ResultRevision,
+			RevisionWarnings: req.RevisionWarnings,
+		}
+	}
+
+	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir, req.FailureReason, revision)
 	if err != nil {
 		slog.Warn("fail task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())

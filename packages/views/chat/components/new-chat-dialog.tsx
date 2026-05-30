@@ -19,6 +19,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
 import { Check, Crown } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
+import { useT } from "../../i18n";
 
 interface NewChatDialogProps {
   open: boolean;
@@ -27,6 +28,7 @@ interface NewChatDialogProps {
 }
 
 export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatDialogProps) {
+  const { t } = useT("chat");
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
@@ -108,13 +110,13 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
     <Dialog open={open} onOpenChange={(v) => { if (!v) resetState(); onOpenChange(v); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Chat</DialogTitle>
+          <DialogTitle>{t(($) => $.new_chat.title)}</DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="direct" onValueChange={() => resetState()}>
           <TabsList className="w-full">
-            <TabsTrigger value="direct" className="flex-1">Direct</TabsTrigger>
-            <TabsTrigger value="group" className="flex-1">Group</TabsTrigger>
+            <TabsTrigger value="direct" className="flex-1">{t(($) => $.new_chat.direct_tab)}</TabsTrigger>
+            <TabsTrigger value="group" className="flex-1">{t(($) => $.new_chat.group_tab)}</TabsTrigger>
           </TabsList>
 
           {/* Direct Tab */}
@@ -138,11 +140,13 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
                 </button>
               ))}
               {availableAgents.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">No agents available</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  {t(($) => $.new_chat.no_agents)}
+                </p>
               )}
             </div>
             <Input
-              placeholder="Title (optional)"
+              placeholder={t(($) => $.new_chat.title_optional)}
               value={directTitle}
               onChange={(e) => setDirectTitle(e.target.value)}
             />
@@ -151,7 +155,7 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
               disabled={!directAgentId || createSession.isPending}
               onClick={handleDirectCreate}
             >
-              {createSession.isPending ? "Creating..." : "Create Direct Chat"}
+              {createSession.isPending ? t(($) => $.new_chat.creating) : t(($) => $.new_chat.create_direct)}
             </Button>
           </TabsContent>
 
@@ -159,7 +163,7 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
           <TabsContent value="group" className="mt-4 space-y-3">
             {groupStep === 1 && (
               <>
-                <p className="text-xs text-muted-foreground">Select at least 2 agents</p>
+                <p className="text-xs text-muted-foreground">{t(($) => $.new_chat.select_agents)}</p>
                 <div className="max-h-48 overflow-y-auto space-y-1">
                   {availableAgents.map((agent) => (
                     <button
@@ -189,7 +193,7 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
                   disabled={selectedAgentIds.size < 2}
                   onClick={() => setGroupStep(2)}
                 >
-                  Next: Choose Orchestrator
+                  {t(($) => $.new_chat.next_orchestrator)}
                 </Button>
               </>
             )}
@@ -200,9 +204,9 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
                   onClick={() => setGroupStep(1)}
                   className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  ← Back to agent selection
+                  {t(($) => $.new_chat.back_agents)}
                 </button>
-                <p className="text-xs text-muted-foreground">Choose orchestrator from selected agents</p>
+                <p className="text-xs text-muted-foreground">{t(($) => $.new_chat.choose_orchestrator)}</p>
                 <div className="max-h-48 overflow-y-auto space-y-1">
                   {availableAgents
                     .filter((a) => selectedAgentIds.has(a.id))
@@ -227,7 +231,7 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
                     ))}
                 </div>
                 <Input
-                  placeholder="Group title (optional)"
+                  placeholder={t(($) => $.new_chat.group_title_optional)}
                   value={groupTitle}
                   onChange={(e) => setGroupTitle(e.target.value)}
                 />
@@ -236,7 +240,7 @@ export function NewChatDialog({ open, onOpenChange, onSessionCreated }: NewChatD
                   disabled={!orchestratorId || createSession.isPending}
                   onClick={handleGroupCreate}
                 >
-                  {createSession.isPending ? "Creating..." : "Create Group Chat"}
+                  {createSession.isPending ? t(($) => $.new_chat.creating) : t(($) => $.new_chat.create_group)}
                 </Button>
               </>
             )}

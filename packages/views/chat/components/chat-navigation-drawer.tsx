@@ -22,6 +22,7 @@ import {
   Zap,
   Settings,
 } from "lucide-react";
+import { useT } from "../../i18n";
 
 interface NavItem {
   label: string;
@@ -30,6 +31,7 @@ interface NavItem {
 }
 
 export function ChatNavigationDrawer() {
+  const { t } = useT("chat");
   const [open, setOpen] = useState(false);
   const { push } = useNavigation();
   const p = useWorkspacePaths();
@@ -51,7 +53,7 @@ export function ChatNavigationDrawer() {
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Navigation menu"
+        aria-label={t(($) => $.shell.navigation_aria)}
         onClick={() => setOpen(true)}
       >
         <Menu className="size-5" />
@@ -59,7 +61,7 @@ export function ChatNavigationDrawer() {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" className="w-72">
           <SheetHeader>
-            <SheetTitle>Navigation</SheetTitle>
+            <SheetTitle>{t(($) => $.shell.navigation_title)}</SheetTitle>
           </SheetHeader>
           <nav className="mt-4 flex flex-col gap-1">
             {navItems.map((item) => (

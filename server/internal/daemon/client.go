@@ -180,7 +180,22 @@ func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages
 	}, nil)
 }
 
-func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string) error {
+// addRevisionFields adds revision-related fields to a request body map.
+// Only non-nil/non-empty values are included — zero-value fields are omitted
+// so the server's COALESCE-based SQL preserves existing DB values.
+func addRevisionFields(body map[string]any, baseRevision, resultRevision *RevisionInfo, warnings []string) {
+	if baseRevision != nil {
+		body["base_revision"] = baseRevision
+	}
+	if resultRevision != nil {
+		body["result_revision"] = resultRevision
+	}
+	if len(warnings) > 0 {
+		body["revision_warnings"] = warnings
+	}
+}
+
+func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, baseRevision, resultRevision *RevisionInfo, warnings []string) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -191,6 +206,7 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 	if workDir != "" {
 		body["work_dir"] = workDir
 	}
+	addRevisionFields(body, baseRevision, resultRevision, warnings)
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/complete", taskID), body, nil)
 }
 
@@ -203,7 +219,7 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 	}, nil)
 }
 
-func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDir, failureReason string) error {
+func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDir, failureReason string, baseRevision, resultRevision *RevisionInfo, warnings []string) error {
 	body := map[string]any{"error": errMsg}
 	if sessionID != "" {
 		body["session_id"] = sessionID
@@ -214,13 +230,15 @@ func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDi
 	if failureReason != "" {
 		body["failure_reason"] = failureReason
 	}
+	addRevisionFields(body, baseRevision, resultRevision, warnings)
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/fail", taskID), body, nil)
 }
 
 // PinTaskSession persists the agent's session_id and work_dir on the task
 // row mid-flight so a daemon crash doesn't lose the resume pointer.
-func (c *Client) PinTaskSession(ctx context.Context, taskID, sessionID, workDir string) error {
-	if sessionID == "" && workDir == "" {
+// PR8: also accepts optional base revision for step-linked tasks.
+func (c *Client) PinTaskSession(ctx context.Context, taskID, sessionID, workDir string, baseRevision *RevisionInfo, warnings []string) error {
+	if sessionID == "" && workDir == "" && baseRevision == nil && len(warnings) == 0 {
 		return nil
 	}
 	body := map[string]any{}
@@ -230,6 +248,7 @@ func (c *Client) PinTaskSession(ctx context.Context, taskID, sessionID, workDir 
 	if workDir != "" {
 		body["work_dir"] = workDir
 	}
+	addRevisionFields(body, baseRevision, nil, warnings)
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/session", taskID), body, nil)
 }
 

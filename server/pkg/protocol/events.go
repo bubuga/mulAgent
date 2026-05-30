@@ -74,6 +74,13 @@ const (
 	EventChatPlanCreated          = "chat:plan_created"
 	EventChatPlanCancelled        = "chat:plan_cancelled"
 	EventChatStepAwaitingApproval = "chat:step_awaiting_approval"
+	EventChatStepQueued           = "chat:step_queued"
+	EventChatStepRunning          = "chat:step_running"
+	EventChatStepCompleted        = "chat:step_completed"
+	EventChatStepFailed           = "chat:step_failed"
+	EventChatStepCancelled        = "chat:step_cancelled"
+	EventChatStepSkipped          = "chat:step_skipped"
+	EventChatPlanCompleted        = "chat:plan_completed"
 
 	// Project events
 	EventProjectCreated         = "project:created"

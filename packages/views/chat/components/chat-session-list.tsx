@@ -3,12 +3,13 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { chatIMSessionsOptions } from "@multica/core/chat/queries";
-import { useRequiredWorkspaceSlug } from "@multica/core/paths";
+import { useWorkspaceId } from "@multica/core/hooks";
 import { ScrollArea } from "@multica/ui/components/ui/scroll-area";
 import { MessageSquare, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { cn } from "@multica/ui/lib/utils";
+import { useT } from "../../i18n";
 
 interface ChatSessionListProps {
   activeSessionId?: string;
@@ -17,7 +18,8 @@ interface ChatSessionListProps {
 }
 
 export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery }: ChatSessionListProps) {
-  const wsId = useRequiredWorkspaceSlug();
+  const { t } = useT("chat");
+  const wsId = useWorkspaceId();
   const { data: sessions, isLoading } = useQuery(chatIMSessionsOptions(wsId));
 
   const filtered = useMemo(() => {
@@ -52,7 +54,9 @@ export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery 
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <MessageSquare className="size-8 mb-2" />
-        <p className="text-sm">{searchQuery ? "No matching chats" : "No conversations yet"}</p>
+        <p className="text-sm">
+          {searchQuery ? t(($) => $.session_list.no_matching) : t(($) => $.session_list.empty)}
+        </p>
       </div>
     );
   }
@@ -88,16 +92,16 @@ export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium truncate flex-1">
-                    {session.title || "Untitled"}
+                    {session.title || t(($) => $.session_list.untitled)}
                   </span>
                   {isGroup && (
                     <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">
-                      Group
+                      {t(($) => $.session_list.group_badge)}
                     </Badge>
                   )}
                   {session.last_message_at && (
                     <span className="text-xs text-muted-foreground shrink-0">
-                      {formatRelativeTime(session.last_message_at)}
+                      {formatRelativeTime(session.last_message_at, t(($) => $.session_list.time_now))}
                     </span>
                   )}
                 </div>
@@ -118,12 +122,12 @@ export function ChatSessionList({ activeSessionId, onSelectSession, searchQuery 
   );
 }
 
-function formatRelativeTime(iso: string): string {
+function formatRelativeTime(iso: string, nowLabel: string): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diff = now - then;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "now";
+  if (mins < 1) return nowLabel;
   if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
